@@ -1,0 +1,247 @@
+// TRiBE Stock Take — data model
+//
+// Note: SQLite (via Prisma) has no native enum support, so role/status style
+// fields are stored as strings. The allowed values live in src/lib/constants.ts
+// and are the single source of truth for the application layer.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+  runtime  = "nodejs"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+/// A single TRiBE venue. Outlet admins are scoped to exactly one of these.
+model Outlet {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  address   String?
+  city      String?
+  phone     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  users       User[]
+  stockLevels OutletStock[]
+  stockTakes  StockTake[]
+  prices      PriceHistory[]
+
+  @@map("outlets")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String
+  passwordHash String
+  /// SUPER_ADMIN sees every outlet; OUTLET_ADMIN is limited to `outletId`.
+  role         String    @default("OUTLET_ADMIN")
+  outletId     String?
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+
+  outlet     Outlet?     @relation(fields: [outletId], references: [id], onDelete: SetNull)
+  stockTakes StockTake[]
+
+  @@index([outletId])
+  @@map("users")
+}
+
+model Category {
+  id        String @id @default(cuid())
+  name      String @unique
+  sortOrder Int    @default(0)
+
+  items InventoryItem[]
+
+  @@map("categories")
+}
+
+/// The GLOBAL inventory catalogue: one row per product across the whole group.
+/// Outlet-specific quantities and prices live in OutletStock.
+model InventoryItem {
+  id         String @id @default(cuid())
+  sku        String @unique
+  name       String
+  brand      String?
+  categoryId String
+  /// Counting unit, e.g. bottle, kg, case, unit.
+  unit       String @default("unit")
+  packSize   String?
+  /// Group-wide reference cost price in EUR.
+  referencePrice    Float  @default(0)
+  /// Default target stock level, used when an outlet has no override.
+  parLevel          Float  @default(0)
+  lowStockThreshold Float  @default(0)
+  /// Comma-separated alternative names, used to match AI-detected labels.
+  aliases    String   @default("")
+  imageUrl   String?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  category     Category        @relation(fields: [categoryId], references: [id])
+  outletStock  OutletStock[]
+  lines        StockTakeLine[]
+  priceHistory PriceHistory[]
+
+  @@index([categoryId])
+  @@index([name])
+  @@map("inventory_items")
+}
+
+/// Current stock position of one catalogue item at one outlet.
+model OutletStock {
+  id            String    @id @default(cuid())
+  outletId      String
+  itemId        String
+  quantity      Float     @default(0)
+  /// Outlet-level price in EUR; falls back to the item reference price.
+  unitPrice     Float     @default(0)
+  parLevel      Float?
+  lastCountedAt DateTime?
+  updatedAt     DateTime  @updatedAt
+
+  outlet Outlet        @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  item   InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([outletId, itemId])
+  @@index([itemId])
+  @@map("outlet_stock")
+}
+
+/// A counting session. Lines start as DRAFT suggestions and are applied to
+/// OutletStock only when the session is submitted.
+model StockTake {
+  id          String    @id @default(cuid())
+  reference   String    @unique
+  outletId    String
+  userId      String
+  /// DRAFT | SUBMITTED
+  status      String    @default("DRAFT")
+  note        String?
+  createdAt   DateTime  @default(now())
+  submittedAt DateTime?
+
+  outlet Outlet          @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  user   User            @relation(fields: [userId], references: [id])
+  lines  StockTakeLine[]
+  photos StockPhoto[]
+
+  @@index([outletId, status])
+  @@index([createdAt])
+  @@map("stock_takes")
+}
+
+model StockTakeLine {
+  id          String  @id @default(cuid())
+  stockTakeId String
+  itemId      String
+  photoId     String?
+  countedQty  Float   @default(0)
+  /// Snapshot of the outlet position at the time the line was created.
+  previousQty   Float @default(0)
+  unitPrice     Float @default(0)
+  previousPrice Float @default(0)
+  /// AI | MANUAL
+  source     String  @default("AI")
+  /// 0..1 model confidence, null for manual lines.
+  confidence Float?
+  /// The raw label the vision model produced, kept for auditing.
+  aiLabel    String?
+  createdAt  DateTime @default(now())
+
+  stockTake StockTake     @relation(fields: [stockTakeId], references: [id], onDelete: Cascade)
+  item      InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  photo     StockPhoto?   @relation(fields: [photoId], references: [id], onDelete: SetNull)
+
+  @@unique([stockTakeId, itemId])
+  @@index([itemId])
+  @@map("stock_take_lines")
+}
+
+model StockPhoto {
+  id          String @id @default(cuid())
+  stockTakeId String
+  fileName    String
+  /// Public URL under /uploads.
+  url         String
+  /// PENDING | ANALYZING | ANALYZED | FAILED
+  status      String @default("PENDING")
+  /// Which analyser produced the result, e.g. openai:gpt-4o-mini or simulated.
+  provider    String?
+  /// Raw JSON returned by the analyser, for auditing.
+  rawResponse String?
+  detectedCount Int      @default(0)
+  error         String?
+  createdAt     DateTime @default(now())
+  analyzedAt    DateTime?
+
+  stockTake  StockTake       @relation(fields: [stockTakeId], references: [id], onDelete: Cascade)
+  lines      StockTakeLine[]
+  detections PhotoDetection[]
+
+  @@index([stockTakeId])
+  @@map("stock_photos")
+}
+
+/// Every individual thing the model reported in a photo, kept whether or not
+/// it could be matched to the catalogue. Unmatched rows are surfaced in the UI
+/// so a human can map them instead of the reading being silently dropped.
+model PhotoDetection {
+  id          String  @id @default(cuid())
+  photoId     String
+  stockTakeId String
+  label       String
+  quantity    Float
+  unitPrice   Float?
+  unit        String?
+  confidence  Float   @default(0)
+  /// SKU the model claimed, before verification.
+  sku         String?
+  /// MATCHED | UNMATCHED | DISMISSED
+  status        String   @default("UNMATCHED")
+  matchedItemId String?
+  matchReason   String?
+  createdAt     DateTime @default(now())
+
+  photo StockPhoto @relation(fields: [photoId], references: [id], onDelete: Cascade)
+
+  @@index([stockTakeId, status])
+  @@map("photo_detections")
+}
+
+/// Append-only price trail so price movements are explainable.
+model PriceHistory {
+  id            String   @id @default(cuid())
+  itemId        String
+  outletId      String?
+  price         Float
+  previousPrice Float?
+  /// AI | MANUAL | SEED
+  source        String
+  createdAt     DateTime @default(now())
+
+  item   InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  outlet Outlet?       @relation(fields: [outletId], references: [id], onDelete: SetNull)
+
+  @@index([itemId, createdAt])
+  @@map("price_history")
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  outletId  String?
+  action    String
+  detail    String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("activity_log")
+}

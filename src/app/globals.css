@@ -1,0 +1,239 @@
+@import "tailwindcss";
+
+/*
+  TRiBE brand tokens.
+
+  Clay and sage are sampled from the supplied logo artwork (#BA8976 / #8FBDB9)
+  and reconciled with the values used on tribemalta.com (#BD8771 / #92C1BE).
+  Teal and cocoa are sampled from the live site's section and footer treatments.
+*/
+@theme {
+  --color-paper: #fffdfd;
+  --color-cream: #fbf6ef;
+  --color-cream-deep: #f4ece1;
+  --color-sand: #e9dccc;
+
+  --color-clay-50: #f9f2ee;
+  --color-clay-100: #eddfd9;
+  --color-clay-200: #e0c5b9;
+  --color-clay-300: #d1ab9c;
+  --color-clay-400: #c79683;
+  --color-clay: #bd8771;
+  --color-clay-600: #a56f5a;
+  --color-clay-700: #855748;
+  --color-clay-800: #603f34;
+
+  --color-sage-50: #eff7f6;
+  --color-sage-100: #dcedeb;
+  --color-sage-200: #c1dedb;
+  --color-sage-300: #a9d0cd;
+  --color-sage: #92c1be;
+  --color-sage-600: #74a5a2;
+  --color-sage-700: #56807d;
+  --color-sage-800: #3b5c5a;
+
+  /* Deep teal used for the wave sections and outline accents. */
+  --color-teal-50: #eef4f6;
+  --color-teal-100: #d6e5e9;
+  --color-teal-200: #a7c5ce;
+  --color-teal: #225567;
+  --color-teal-600: #1b4453;
+  --color-teal-700: #14333e;
+
+  /* Footer / deep brown. */
+  --color-cocoa: #60362e;
+  --color-cocoa-light: #704a43;
+
+  --color-ink: #3a251f;
+  --color-ink-soft: #60362e;
+  --color-ink-muted: #8a6a5f;
+
+  --font-display: var(--font-tribe-display), "Trebuchet MS", sans-serif;
+  --font-body: var(--font-tribe-body), system-ui, sans-serif;
+
+  --radius-card: 1.25rem;
+  --radius-pill: 999px;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-body);
+    font-weight: 600;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background-color: var(--color-clay);
+    color: #fff;
+  }
+
+  /* Keyboard focus stays visible everywhere without adding noise for mouse users. */
+  :focus-visible {
+    outline: 2px solid var(--color-clay);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .display-heading {
+    font-family: var(--font-display);
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.01em;
+    line-height: 1;
+  }
+
+  .eyebrow {
+    font-family: var(--font-display);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    font-size: 0.7rem;
+  }
+
+  /*
+    The live site gives cards a hard offset edge in a second brand colour
+    rather than a soft shadow.
+  */
+  .offset-card {
+    border: 2px solid var(--color-teal);
+    box-shadow: 0 6px 0 0 var(--color-clay);
+  }
+
+  .offset-card-clay {
+    border: 2px solid var(--color-clay-300);
+    box-shadow: 0 6px 0 0 var(--color-clay);
+  }
+
+  .offset-button {
+    box-shadow: 0 5px 0 0 var(--color-clay-600);
+  }
+
+  .offset-button:active {
+    transform: translateY(3px);
+    box-shadow: 0 2px 0 0 var(--color-clay-600);
+  }
+}
+
+/* ---------- Motion ---------- */
+
+@keyframes tribe-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-marquee {
+  animation: tribe-marquee 32s linear infinite;
+}
+
+.animate-marquee-fast {
+  animation: tribe-marquee 18s linear infinite;
+}
+
+@keyframes tribe-rise {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Scroll-reveal: elements start hidden and are released by an observer. */
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition:
+    opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@keyframes tribe-blink {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  96% {
+    transform: scaleY(0.08);
+  }
+}
+
+.animate-blink {
+  transform-origin: center;
+  animation: tribe-blink 6s ease-in-out infinite;
+}
+
+@keyframes tribe-spin-slow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: tribe-spin-slow 26s linear infinite;
+}
+
+@keyframes tribe-pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgb(186 137 118 / 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 14px rgb(186 137 118 / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgb(186 137 118 / 0);
+  }
+}
+
+.animate-pulse-ring {
+  animation: tribe-pulse-ring 2s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-marquee,
+  .animate-marquee-fast,
+  .animate-blink,
+  .animate-spin-slow,
+  .animate-pulse-ring {
+    animation: none;
+  }
+
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* Hide scrollbars on horizontal scrollers while keeping them usable. */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

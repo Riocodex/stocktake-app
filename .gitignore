@@ -1,0 +1,24 @@
+node_modules
+.next
+out
+build
+
+# Environment
+.env
+.env*.local
+
+# Prisma
+/src/generated/prisma
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Uploaded stock photos
+/public/uploads/*
+!/public/uploads/.gitkeep
+
+# Misc
+.DS_Store
+*.tsbuildinfo
+next-env.d.ts
