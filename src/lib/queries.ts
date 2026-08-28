@@ -1,7 +1,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/db";
-import { LINE_SOURCE, STOCK_TAKE_STATUS } from "@/lib/constants";
+import { LINE_SOURCE, STOCK_TAKE_STATUS, categoryMatchesArea } from "@/lib/constants";
 
 export async function getOutlets() {
   return prisma.outlet.findMany({
@@ -190,4 +190,43 @@ export async function getValueByCategory(
   }
 
   return [...totals.values()].sort((a, b) => b.value - a.value);
+}
+
+export async function getActiveStockTakes(outletId: string | null) {
+  return prisma.stockTake.findMany({
+    where: {
+      status: STOCK_TAKE_STATUS.DRAFT,
+      ...(outletId ? { outletId } : {}),
+    },
+    orderBy: { createdAt: "desc" },
+    take: 6,
+    include: {
+      outlet: { select: { name: true } },
+      user: { select: { name: true } },
+      _count: { select: { lines: true } },
+    },
+  });
+}
+
+/** How many catalogue items in this area have been counted on a draft. */
+export async function getCountProgress(stockTakeId: string, area: string | null) {
+  const categories = await prisma.category.findMany({
+    where: { items: { some: { isActive: true } } },
+    include: {
+      items: { where: { isActive: true }, select: { id: true } },
+    },
+    orderBy: { sortOrder: "asc" },
+  });
+
+  const relevant = categories.filter((category) =>
+    categoryMatchesArea(category.area, area),
+  );
+  const itemIds = relevant.flatMap((category) =>
+    category.items.map((item) => item.id),
+  );
+  const counted = await prisma.stockTakeLine.count({
+    where: { stockTakeId, itemId: { in: itemIds } },
+  });
+
+  return { counted, total: itemIds.length };
 }

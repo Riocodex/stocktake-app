@@ -15,6 +15,44 @@ export const STOCK_TAKE_STATUS = {
   SUBMITTED: "SUBMITTED",
 } as const;
 
+/** Which side of the venue a count or a catalogue section belongs to. */
+export const STOCK_AREAS = {
+  BAR: "BAR",
+  KITCHEN: "KITCHEN",
+} as const;
+
+export type StockArea = (typeof STOCK_AREAS)[keyof typeof STOCK_AREAS];
+
+export const AREA_LABELS: Record<string, string> = {
+  BAR: "Bar",
+  KITCHEN: "Kitchen",
+};
+
+/** Catalogue sections that appear on both bar and kitchen counts. */
+export const AREA_BOTH = "BOTH";
+
+export const CATEGORY_AREAS: Record<string, StockArea | typeof AREA_BOTH> = {
+  "Coffee & Tea": STOCK_AREAS.BAR,
+  "Soft Drinks": STOCK_AREAS.BAR,
+  "Wine & Beer": STOCK_AREAS.BAR,
+  Spirits: STOCK_AREAS.BAR,
+  Merch: STOCK_AREAS.BAR,
+  "Dairy & Alternatives": STOCK_AREAS.KITCHEN,
+  Bakery: STOCK_AREAS.KITCHEN,
+  "Fruit & Veg": STOCK_AREAS.KITCHEN,
+  "Dry Goods": STOCK_AREAS.KITCHEN,
+  Packaging: AREA_BOTH,
+};
+
+export function categoryMatchesArea(
+  categoryArea: string | null | undefined,
+  stockArea: string | null | undefined,
+) {
+  if (!stockArea) return true;
+  if (!categoryArea || categoryArea === AREA_BOTH) return true;
+  return categoryArea === stockArea;
+}
+
 export const PHOTO_STATUS = {
   PENDING: "PENDING",
   ANALYZING: "ANALYZING",
@@ -31,6 +69,7 @@ export const UNITS = [
   "unit",
   "bottle",
   "can",
+  "carton",
   "case",
   "keg",
   "kg",
@@ -42,6 +81,11 @@ export const UNITS = [
   "tray",
   "box",
   "bag",
+  "tin",
+  "tub",
+  "loaf",
+  "slice",
+  "block",
 ] as const;
 
 /// A count is treated as a discrepancy worth flagging beyond this ratio.

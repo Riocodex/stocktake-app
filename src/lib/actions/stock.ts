@@ -5,7 +5,12 @@ import { redirect } from "next/navigation";
 
 import { assertOutletAccess, requireUser, isSuperAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { LINE_SOURCE, STOCK_TAKE_STATUS } from "@/lib/constants";
+import {
+  LINE_SOURCE,
+  STOCK_AREAS,
+  STOCK_TAKE_STATUS,
+  type StockArea,
+} from "@/lib/constants";
 import {
   nextStockTakeReference,
   submitStockTake as commitStockTake,
@@ -40,7 +45,11 @@ export async function createStockTakeAction(
   const user = await requireUser();
 
   const requestedOutlet = String(formData.get("outletId") ?? "").trim();
-  const note = String(formData.get("note") ?? "").trim();
+  const area = String(formData.get("area") ?? "").trim() as StockArea;
+
+  if (area !== STOCK_AREAS.BAR && area !== STOCK_AREAS.KITCHEN) {
+    return { error: "Choose whether this count is for the bar or the kitchen." };
+  }
 
   const outletId = isSuperAdmin(user) ? requestedOutlet : user.outletId;
 
@@ -62,7 +71,7 @@ export async function createStockTakeAction(
       reference: await nextStockTakeReference(),
       outletId,
       userId: user.id,
-      note: note || null,
+      area,
     },
   });
 
@@ -83,8 +92,10 @@ export async function updateLineAction(
   });
   if (!line) return { error: "That line no longer exists." };
 
+  let canEditPrices = false;
   try {
-    await loadEditableStockTake(line.stockTakeId);
+    const loaded = await loadEditableStockTake(line.stockTakeId);
+    canEditPrices = isSuperAdmin(loaded.user);
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Not allowed." };
   }
@@ -99,7 +110,7 @@ export async function updateLineAction(
     data.countedQty = Math.round(quantity * 100) / 100;
   }
 
-  if (priceRaw !== null) {
+  if (priceRaw !== null && canEditPrices) {
     const price = Number(priceRaw);
     if (!Number.isFinite(price) || price < 0) {
       return { error: "Price must be zero or more." };
@@ -154,8 +165,9 @@ export async function addLineAction(
   }
 
   let stockTake;
+  let user;
   try {
-    ({ stockTake } = await loadEditableStockTake(stockTakeId));
+    ({ stockTake, user } = await loadEditableStockTake(stockTakeId));
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Not allowed." };
   }
@@ -172,9 +184,12 @@ export async function addLineAction(
   const previousQty = outletStock?.quantity ?? 0;
   const previousPrice = outletStock?.unitPrice || item.referencePrice;
 
+  const canEditPrices = isSuperAdmin(user);
   const priceRaw = formData.get("unitPrice");
   const price =
-    priceRaw !== null && priceRaw !== "" ? Number(priceRaw) : previousPrice;
+    canEditPrices && priceRaw !== null && priceRaw !== ""
+      ? Number(priceRaw)
+      : previousPrice;
 
   if (!Number.isFinite(price) || price < 0) {
     return { error: "Price must be zero or more." };
@@ -293,20 +308,18 @@ export async function submitStockTakeAction(
   const note = String(formData.get("note") ?? "").trim();
 
   try {
-    await loadEditableStockTake(stockTakeId);
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : "Not allowed." };
-  }
+    const { user } = await loadEditableStockTake(stockTakeId);
 
-  if (note) {
-    await prisma.stockTake.update({
-      where: { id: stockTakeId },
-      data: { note },
+    if (note) {
+      await prisma.stockTake.update({
+        where: { id: stockTakeId },
+        data: { note },
+      });
+    }
+
+    await commitStockTake(stockTakeId, {
+      updatePrices: isSuperAdmin(user),
     });
-  }
-
-  try {
-    await commitStockTake(stockTakeId);
   } catch (error) {
     return {
       error:

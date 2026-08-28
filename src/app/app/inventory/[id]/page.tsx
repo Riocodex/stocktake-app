@@ -14,6 +14,7 @@ import {
   Td,
   Th,
 } from "@/components/ui";
+import { ReceiveForm } from "./receive-form";
 
 export const metadata: Metadata = { title: "Product" };
 
@@ -86,19 +87,32 @@ export default async function InventoryItemPage({
           href="/app/inventory"
           className="text-xs font-semibold text-clay hover:underline"
         >
-          ← Global inventory
+          ← Inventory
         </Link>
         <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <p className="eyebrow text-clay">{item.category.name}</p>
-            <h1 className="display-heading mt-2 text-3xl text-ink sm:text-4xl">
-              {item.brand ? `${item.brand} ` : ""}
-              {item.name}
-            </h1>
-            <p className="mt-2 text-sm text-ink-muted">
-              {item.sku} · counted in {item.unit}
-              {item.packSize ? ` · ${item.packSize}` : ""}
-            </p>
+          <div className="flex items-start gap-4">
+            {item.imageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={item.imageUrl}
+                alt=""
+                className="h-20 w-20 rounded-2xl object-cover"
+              />
+            ) : null}
+            <div>
+              <p className="eyebrow text-clay">{item.category.name}</p>
+              <h1 className="display-heading mt-2 text-3xl text-ink sm:text-4xl">
+                {item.brand ? `${item.brand} ` : ""}
+                {item.name}
+              </h1>
+              <p className="mt-2 text-sm text-ink-muted">
+                {item.sku} · counted in {item.unit}
+                {item.packSize ? ` · ${item.packSize}` : ""}
+                {item.supplierPackQty
+                  ? ` · supplier pack ${item.supplierPackQty} ${item.unit}`
+                  : ""}
+              </p>
+            </div>
           </div>
           {item.isActive ? (
             <Badge tone="ok">Active</Badge>
@@ -128,6 +142,21 @@ export default async function InventoryItemPage({
         />
       </section>
 
+      {user.outletId ? (
+        <Card>
+          <p className="eyebrow text-ink-muted">Supplier just delivered?</p>
+          <p className="mt-1 mb-4 text-xs text-ink-muted">
+            Add incoming quantity to live stock. Set an expiry if the batch has
+            one.
+          </p>
+          <ReceiveForm
+            itemId={item.id}
+            outletId={user.outletId}
+            unit={item.unit}
+          />
+        </Card>
+      ) : null}
+
       <section>
         <h2 className="display-heading mb-4 text-xl text-ink">
           {superAdmin ? "Position by outlet" : "Your outlet"}
@@ -146,8 +175,9 @@ export default async function InventoryItemPage({
                 <Th>Outlet</Th>
                 <Th className="text-right">On hand</Th>
                 <Th className="w-32">vs par</Th>
-                <Th className="text-right">Unit price</Th>
+                <Th>Unit price</Th>
                 <Th className="text-right">Value</Th>
+                <Th>Expiry</Th>
                 <Th>Last counted</Th>
               </>
             }
@@ -183,6 +213,9 @@ export default async function InventoryItemPage({
                   </Td>
                   <Td className="text-right font-semibold text-ink">
                     {formatMoney(row.quantity * row.unitPrice)}
+                  </Td>
+                  <Td className="text-xs whitespace-nowrap">
+                    {formatDate(row.expiryDate)}
                   </Td>
                   <Td className="text-xs whitespace-nowrap">
                     {formatRelative(row.lastCountedAt)}

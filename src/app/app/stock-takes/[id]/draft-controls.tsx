@@ -343,8 +343,8 @@ export function SubmitPanel({
       {confirming ? (
         <div className="mt-5 space-y-3">
           <p className="text-xs leading-relaxed text-cream/70">
-            This replaces the live stock quantities and prices for this outlet
-            with the counted figures. It cannot be undone.
+            This replaces the live stock quantities for this outlet with the
+            counted figures. It cannot be undone.
           </p>
           <div className="flex gap-2">
             <Button

@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 
 import { createStockTakeAction, type ActionResult } from "@/lib/actions/stock";
+import { STOCK_AREAS } from "@/lib/constants";
 import { Button } from "@/components/ui";
 
 const INITIAL: ActionResult = { error: null };
@@ -53,19 +54,39 @@ export function NewStockTakeForm({
         </div>
       )}
 
-      <div>
-        <label htmlFor="note" className="eyebrow mb-2 block text-ink-muted">
-          Note <span className="normal-case tracking-normal">(optional)</span>
-        </label>
-        <input
-          id="note"
-          name="note"
-          type="text"
-          maxLength={140}
-          placeholder="e.g. Monday back bar count"
-          className="w-full rounded-2xl border border-ink/15 bg-white px-4 py-3 text-sm text-ink outline-none transition placeholder:text-ink-muted/60 focus:border-clay"
-        />
-      </div>
+      <fieldset>
+        <legend className="eyebrow mb-3 block text-ink-muted">
+          Which section are you counting?
+        </legend>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="flex cursor-pointer flex-col gap-1 rounded-2xl border-2 border-ink/10 bg-white p-4 has-[:checked]:border-clay has-[:checked]:bg-clay-50">
+            <input
+              type="radio"
+              name="area"
+              value={STOCK_AREAS.BAR}
+              required
+              defaultChecked
+              className="accent-[#ba8976]"
+            />
+            <span className="display-heading text-lg text-ink">Bar</span>
+            <span className="text-xs text-ink-muted">
+              Soft drinks, beer, wine, spirits, coffee, merch.
+            </span>
+          </label>
+          <label className="flex cursor-pointer flex-col gap-1 rounded-2xl border-2 border-ink/10 bg-white p-4 has-[:checked]:border-clay has-[:checked]:bg-clay-50">
+            <input
+              type="radio"
+              name="area"
+              value={STOCK_AREAS.KITCHEN}
+              className="accent-[#ba8976]"
+            />
+            <span className="display-heading text-lg text-ink">Kitchen</span>
+            <span className="text-xs text-ink-muted">
+              Dairy, bakery, fruit & veg, dry goods, packaging.
+            </span>
+          </label>
+        </div>
+      </fieldset>
 
       {state.error ? (
         <p

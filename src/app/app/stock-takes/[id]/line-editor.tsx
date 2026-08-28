@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
-import { Badge, cn } from "@/components/ui";
+import { cn } from "@/components/ui";
 import { formatMoney, formatQty, formatSigned } from "@/lib/format";
 import { LOW_CONFIDENCE_THRESHOLD } from "@/lib/constants";
 import { deleteLineAction, updateLineAction } from "@/lib/actions/stock";
@@ -49,10 +49,12 @@ function VarianceCell({ counted, previous }: { counted: number; previous: number
 function LineRow({
   line,
   editable,
+  canEditPrices,
   onChanged,
 }: {
   line: EditableLine;
   editable: boolean;
+  canEditPrices: boolean;
   onChanged: () => void;
 }) {
   const [qty, setQty] = useState(String(line.countedQty));
@@ -62,14 +64,14 @@ function LineRow({
 
   const dirty =
     Number(qty) !== line.countedQty ||
-    Math.abs(Number(price) - line.unitPrice) > 0.005;
+    (canEditPrices && Math.abs(Number(price) - line.unitPrice) > 0.005);
 
   function save() {
     setError(null);
     const formData = new FormData();
     formData.set("lineId", line.id);
     formData.set("countedQty", qty);
-    formData.set("unitPrice", price);
+    if (canEditPrices) formData.set("unitPrice", price);
 
     startTransition(async () => {
       const result = await updateLineAction({ error: null }, formData);
@@ -158,7 +160,7 @@ function LineRow({
       </td>
 
       <td className="px-4 py-3 text-right">
-        {editable ? (
+        {editable && canEditPrices ? (
           <div className="inline-flex items-center gap-1">
             <span className="text-xs text-ink-muted">€</span>
             <input
@@ -186,19 +188,6 @@ function LineRow({
 
       <td className="px-4 py-3 text-right text-sm font-semibold text-ink">
         {formatMoney(line.countedQty * line.unitPrice)}
-      </td>
-
-      <td className="px-4 py-3">
-        {line.source === "AI" ? (
-          <Badge tone={lowConfidence ? "warn" : "sage"}>
-            AI{" "}
-            {line.confidence !== null
-              ? `${Math.round(line.confidence * 100)}%`
-              : ""}
-          </Badge>
-        ) : (
-          <Badge tone="neutral">Manual</Badge>
-        )}
       </td>
 
       {editable ? (
@@ -243,16 +232,18 @@ function LineRow({
 export function LineEditor({
   lines,
   editable,
+  canEditPrices = false,
 }: {
   lines: EditableLine[];
   editable: boolean;
+  canEditPrices?: boolean;
 }) {
   const router = useRouter();
 
   return (
     <div className="overflow-hidden rounded-3xl border border-ink/8 bg-white">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[56rem] border-collapse text-sm">
+        <table className="w-full min-w-[42rem] border-collapse text-sm">
           <thead className="bg-cream-deep/70">
             <tr className="text-left">
               <th className="px-4 py-3 text-[11px] font-bold tracking-[0.14em] text-ink-muted uppercase">
@@ -273,9 +264,6 @@ export function LineEditor({
               <th className="px-4 py-3 text-right text-[11px] font-bold tracking-[0.14em] text-ink-muted uppercase">
                 Line value
               </th>
-              <th className="px-4 py-3 text-[11px] font-bold tracking-[0.14em] text-ink-muted uppercase">
-                Source
-              </th>
               {editable ? <th className="px-4 py-3" /> : null}
             </tr>
           </thead>
@@ -285,6 +273,7 @@ export function LineEditor({
                 key={line.id}
                 line={line}
                 editable={editable}
+                canEditPrices={canEditPrices}
                 onChanged={() => router.refresh()}
               />
             ))}

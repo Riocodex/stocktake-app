@@ -47,7 +47,7 @@ const NAV: NavItem[] = [
   },
   {
     href: "/app/inventory",
-    label: "Global inventory",
+    label: "Inventory",
     icon: <Icon path="M3 7l9-4 9 4-9 4-9-4Zm0 5l9 4 9-4M3 17l9 4 9-4" />,
   },
   {
@@ -192,7 +192,7 @@ export function AppNav({ user }: { user: SessionUser }) {
       </div>
 
       {mobileOpen ? (
-        <div className="fixed inset-0 top-[57px] z-30 flex flex-col bg-cream px-4 py-6 lg:hidden">
+        <div className="fixed inset-0 top-[57px] z-30 flex flex-col overflow-y-auto bg-cream px-4 py-6 lg:hidden">
           {navBody}
         </div>
       ) : null}

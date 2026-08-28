@@ -4,20 +4,20 @@ import type { Metadata } from "next";
 import { isSuperAdmin, requireUser, resolveOutletScope } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getOutlets, isLow } from "@/lib/queries";
-import { formatMoney, formatQty, formatRelative } from "@/lib/format";
+import { formatDate, formatMoney, formatQty } from "@/lib/format";
 import {
   Badge,
+  ButtonLink,
   Card,
   EmptyState,
   StatCard,
-  StockBar,
   TableShell,
   Td,
   Th,
 } from "@/components/ui";
 import { OutletSwitcher } from "@/components/app/outlet-switcher";
 
-export const metadata: Metadata = { title: "Global inventory" };
+export const metadata: Metadata = { title: "Inventory" };
 
 export default async function InventoryPage({
   searchParams,
@@ -75,6 +75,9 @@ export default async function InventoryPage({
     unit: string;
     category: string;
     packSize: string | null;
+    supplierPackQty: number | null;
+    imageUrl: string | null;
+    expiryDate: Date | null;
     referencePrice: number;
     parLevel: number;
     quantity: number;
@@ -125,6 +128,9 @@ export default async function InventoryPage({
       unit: item.unit,
       category: item.category.name,
       packSize: item.packSize,
+      supplierPackQty: item.supplierPackQty,
+      imageUrl: item.imageUrl,
+      expiryDate: stock[0]?.expiryDate ?? null,
       referencePrice: item.referencePrice,
       parLevel: par,
       quantity,
@@ -158,17 +164,23 @@ export default async function InventoryPage({
         <div>
           <p className="eyebrow text-clay">{scopeLabel}</p>
           <h1 className="display-heading mt-2 text-3xl text-ink sm:text-4xl">
-            Global inventory
+            Inventory
           </h1>
           <p className="mt-2 max-w-xl text-sm text-ink-muted">
-            One catalogue shared by every outlet. Quantities and prices are
-            tracked per venue and updated by each stock take.
+            Catalogue, live quantities and prices. Record a delivery when a
+            supplier arrives; use a stock take to recount what is on the shelf.
           </p>
         </div>
 
-        {superAdmin ? (
-          <OutletSwitcher outlets={outlets} value={scope.outletId} />
-        ) : null}
+        <div className="flex flex-wrap items-center gap-3">
+          {superAdmin ? (
+            <OutletSwitcher outlets={outlets} value={scope.outletId} />
+          ) : null}
+          <ButtonLink href="/app/inventory/delivery" variant="secondary">
+            Record delivery
+          </ButtonLink>
+          <ButtonLink href="/app/inventory/new">Add product</ButtonLink>
+        </div>
       </header>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -188,6 +200,42 @@ export default async function InventoryPage({
           tone={totals.outOfStock > 0 ? "clay" : "sage"}
         />
       </section>
+
+      <nav className="flex flex-wrap gap-2">
+        <Link
+          href={
+            scope.outletId
+              ? `/app/inventory?outlet=${scope.outletId}`
+              : "/app/inventory"
+          }
+          className={
+            !categoryFilter
+              ? "rounded-pill bg-ink px-4 py-1.5 text-xs font-bold text-cream"
+              : "rounded-pill border border-ink/15 px-4 py-1.5 text-xs font-bold text-ink-soft transition hover:border-clay hover:text-clay"
+          }
+        >
+          All sections
+        </Link>
+        {categories.map((category) => {
+          const query = new URLSearchParams();
+          if (scope.outletId) query.set("outlet", scope.outletId);
+          query.set("category", category.id);
+          if (lowOnly) query.set("filter", "low");
+          return (
+            <Link
+              key={category.id}
+              href={`/app/inventory?${query.toString()}`}
+              className={
+                categoryFilter === category.id
+                  ? "rounded-pill bg-ink px-4 py-1.5 text-xs font-bold text-cream"
+                  : "rounded-pill border border-ink/15 px-4 py-1.5 text-xs font-bold text-ink-soft transition hover:border-clay hover:text-clay"
+              }
+            >
+              {category.name}
+            </Link>
+          );
+        })}
+      </nav>
 
       <Card className="p-4">
         <form method="get" className="flex flex-wrap items-end gap-3">
@@ -276,39 +324,49 @@ export default async function InventoryPage({
           head={
             <>
               <Th>Product</Th>
-              <Th>Category</Th>
+              <Th>Section</Th>
               <Th className="text-right">
                 {scope.outletId ? "On hand" : "Total on hand"}
               </Th>
-              <Th className="w-32">vs par</Th>
+              <Th className="text-right">Supplier qty</Th>
               <Th className="text-right">
                 {scope.outletId ? "Unit price" : "Avg price"}
               </Th>
+              <Th>Expiry</Th>
               <Th className="text-right">Value</Th>
-              {!scope.outletId ? <Th className="text-right">Outlets</Th> : null}
-              <Th>Last counted</Th>
             </>
           }
         >
-          {visible.map((row) => {
-            const ratio = row.parLevel > 0 ? row.quantity / row.parLevel : 0;
-
-            return (
+          {visible.map((row) => (
               <tr key={row.id} className="transition-colors hover:bg-cream/60">
                 <Td>
                   <Link
                     href={`/app/inventory/${row.id}${
                       scope.outletId ? `?outlet=${scope.outletId}` : ""
                     }`}
-                    className="font-semibold text-ink hover:text-clay"
+                    className="flex items-center gap-3 font-semibold text-ink hover:text-clay"
                   >
-                    {row.brand ? `${row.brand} ` : ""}
-                    {row.name}
+                    {row.imageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={row.imageUrl}
+                        alt=""
+                        className="h-10 w-10 shrink-0 rounded-lg object-cover"
+                      />
+                    ) : (
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-cream-deep text-[10px] font-bold text-ink-muted">
+                        {row.name.slice(0, 2).toUpperCase()}
+                      </span>
+                    )}
+                    <span>
+                      {row.brand ? `${row.brand} ` : ""}
+                      {row.name}
+                      <span className="block text-[11px] font-normal text-ink-muted">
+                        {row.sku}
+                        {row.packSize ? ` · ${row.packSize}` : ""}
+                      </span>
+                    </span>
                   </Link>
-                  <span className="block text-[11px] text-ink-muted">
-                    {row.sku}
-                    {row.packSize ? ` · ${row.packSize}` : ""}
-                  </span>
                 </Td>
                 <Td className="text-xs">{row.category}</Td>
                 <Td className="text-right">
@@ -330,25 +388,20 @@ export default async function InventoryPage({
                     </Badge>
                   ) : null}
                 </Td>
-                <Td>
-                  <StockBar ratio={ratio} />
-                  <span className="mt-1 block text-[10px] text-ink-muted">
-                    par {formatQty(row.parLevel)}
-                  </span>
+                <Td className="text-right text-xs">
+                  {row.supplierPackQty !== null
+                    ? `${formatQty(row.supplierPackQty)} ${row.unit}`
+                    : "—"}
                 </Td>
                 <Td className="text-right text-xs">{formatMoney(row.price)}</Td>
+                <Td className="text-xs whitespace-nowrap">
+                  {scope.outletId ? formatDate(row.expiryDate) : "—"}
+                </Td>
                 <Td className="text-right font-semibold text-ink">
                   {formatMoney(row.value)}
                 </Td>
-                {!scope.outletId ? (
-                  <Td className="text-right text-xs">{row.outletCount}</Td>
-                ) : null}
-                <Td className="text-xs whitespace-nowrap">
-                  {formatRelative(row.lastCounted)}
-                </Td>
               </tr>
-            );
-          })}
+          ))}
         </TableShell>
       )}
     </div>

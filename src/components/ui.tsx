@@ -287,6 +287,59 @@ export function EmptyState({
 
 /* ---------------- Progress ---------------- */
 
+export function ProgressRing({
+  value,
+  total,
+  size = 72,
+}: {
+  value: number;
+  total: number;
+  size?: number;
+}) {
+  const pct = total > 0 ? Math.min(value / total, 1) : 0;
+  const radius = 16;
+  const circumference = 2 * Math.PI * radius;
+
+  return (
+    <div
+      className="relative shrink-0"
+      style={{ width: size, height: size }}
+      role="img"
+      aria-label={`${value} of ${total} items counted`}
+    >
+      <svg
+        viewBox="0 0 40 40"
+        className="h-full w-full -rotate-90"
+        aria-hidden="true"
+      >
+        <circle
+          cx="20"
+          cy="20"
+          r={radius}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="4"
+          className="text-ink/10"
+        />
+        <circle
+          cx="20"
+          cy="20"
+          r={radius}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="4"
+          strokeLinecap="round"
+          className="text-sage"
+          strokeDasharray={`${circumference * pct} ${circumference}`}
+        />
+      </svg>
+      <span className="absolute inset-0 grid place-items-center text-[11px] font-bold text-ink">
+        {total > 0 ? `${Math.round(pct * 100)}%` : "—"}
+      </span>
+    </div>
+  );
+}
+
 export function StockBar({ ratio }: { ratio: number }) {
   const clamped = Math.max(0, Math.min(ratio, 1.35));
   const percent = Math.min(clamped / 1.35, 1) * 100;

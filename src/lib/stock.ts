@@ -184,7 +184,10 @@ export async function applyDetectionsToStockTake(options: {
  * model read replaces the outlet price, and every price movement is written to
  * the audit trail. Runs in a transaction so a partial apply cannot happen.
  */
-export async function submitStockTake(stockTakeId: string) {
+export async function submitStockTake(
+  stockTakeId: string,
+  options: { updatePrices?: boolean } = {},
+) {
   const stockTake = await prisma.stockTake.findUnique({
     where: { id: stockTakeId },
     include: { lines: true },
@@ -199,6 +202,7 @@ export async function submitStockTake(stockTakeId: string) {
   }
 
   const now = new Date();
+  const updatePrices = options.updatePrices !== false;
 
   await prisma.$transaction(async (tx) => {
     for (const line of stockTake.lines) {
@@ -209,6 +213,7 @@ export async function submitStockTake(stockTakeId: string) {
       });
 
       const previousPrice = existing?.unitPrice ?? 0;
+      const nextPrice = updatePrices ? line.unitPrice : (existing?.unitPrice ?? line.unitPrice);
 
       await tx.outletStock.upsert({
         where: {
@@ -218,17 +223,21 @@ export async function submitStockTake(stockTakeId: string) {
           outletId: stockTake.outletId,
           itemId: line.itemId,
           quantity: line.countedQty,
-          unitPrice: line.unitPrice,
+          unitPrice: nextPrice,
           lastCountedAt: now,
         },
         update: {
           quantity: line.countedQty,
-          unitPrice: line.unitPrice,
+          ...(updatePrices ? { unitPrice: line.unitPrice } : {}),
           lastCountedAt: now,
         },
       });
 
-      if (line.unitPrice > 0 && Math.abs(line.unitPrice - previousPrice) > 0.005) {
+      if (
+        updatePrices &&
+        line.unitPrice > 0 &&
+        Math.abs(line.unitPrice - previousPrice) > 0.005
+      ) {
         await tx.priceHistory.create({
           data: {
             itemId: line.itemId,

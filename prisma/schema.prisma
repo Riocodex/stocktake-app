@@ -29,6 +29,7 @@ model Outlet {
   stockLevels OutletStock[]
   stockTakes  StockTake[]
   prices      PriceHistory[]
+  deliveries  Delivery[]
 
   @@map("outlets")
 }
@@ -47,6 +48,7 @@ model User {
 
   outlet     Outlet?     @relation(fields: [outletId], references: [id], onDelete: SetNull)
   stockTakes StockTake[]
+  deliveries Delivery[]
 
   @@index([outletId])
   @@map("users")
@@ -56,6 +58,8 @@ model Category {
   id        String @id @default(cuid())
   name      String @unique
   sortOrder Int    @default(0)
+  /// BAR | KITCHEN | BOTH
+  area      String @default("BOTH")
 
   items InventoryItem[]
 
@@ -78,6 +82,8 @@ model InventoryItem {
   /// Default target stock level, used when an outlet has no override.
   parLevel          Float  @default(0)
   lowStockThreshold Float  @default(0)
+  /// Typical quantity received in one supplier delivery of this product.
+  supplierPackQty Float?
   /// Comma-separated alternative names, used to match AI-detected labels.
   aliases    String   @default("")
   imageUrl   String?
@@ -89,6 +95,7 @@ model InventoryItem {
   outletStock  OutletStock[]
   lines        StockTakeLine[]
   priceHistory PriceHistory[]
+  deliveries   DeliveryLine[]
 
   @@index([categoryId])
   @@index([name])
@@ -105,6 +112,8 @@ model OutletStock {
   unitPrice     Float     @default(0)
   parLevel      Float?
   lastCountedAt DateTime?
+  /// Best-before of the current batch at this outlet, set on delivery.
+  expiryDate    DateTime?
   updatedAt     DateTime  @updatedAt
 
   outlet Outlet        @relation(fields: [outletId], references: [id], onDelete: Cascade)
@@ -124,6 +133,8 @@ model StockTake {
   userId      String
   /// DRAFT | SUBMITTED
   status      String    @default("DRAFT")
+  /// BAR | KITCHEN — which side of the venue this count covers.
+  area        String    @default("BAR")
   note        String?
   createdAt   DateTime  @default(now())
   submittedAt DateTime?
@@ -232,6 +243,38 @@ model PriceHistory {
 
   @@index([itemId, createdAt])
   @@map("price_history")
+}
+
+/// A supplier delivery: incoming stock recorded without a full count.
+model Delivery {
+  id        String   @id @default(cuid())
+  outletId  String
+  userId    String
+  note      String?
+  createdAt DateTime @default(now())
+
+  outlet Outlet         @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  user   User           @relation(fields: [userId], references: [id])
+  lines  DeliveryLine[]
+
+  @@index([outletId, createdAt])
+  @@map("deliveries")
+}
+
+model DeliveryLine {
+  id         String    @id @default(cuid())
+  deliveryId String
+  itemId     String
+  quantity   Float
+  unitPrice  Float?
+  expiryDate DateTime?
+  createdAt  DateTime  @default(now())
+
+  delivery Delivery      @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  item     InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@map("delivery_lines")
 }
 
 model ActivityLog {

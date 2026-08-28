@@ -2,7 +2,6 @@ import Link from "next/link";
 
 import { requireUser, resolveOutletScope, isSuperAdmin } from "@/lib/auth";
 import {
-  getAutomationShare,
   getGroupSummaryByOutlet,
   getLowStock,
   getOutletSummary,
@@ -25,7 +24,6 @@ import {
   Th,
 } from "@/components/ui";
 import { OutletSwitcher } from "@/components/app/outlet-switcher";
-import { EyeMark } from "@/components/brand/marks";
 
 export default async function DashboardPage({
   searchParams,
@@ -37,12 +35,11 @@ export default async function DashboardPage({
   const scope = resolveOutletScope(user, params.outlet ?? null);
   const superAdmin = isSuperAdmin(user);
 
-  const [outlets, lowStock, recentTakes, automation, categories] =
+  const [outlets, lowStock, recentTakes, categories] =
     await Promise.all([
       superAdmin ? getOutlets() : Promise.resolve([]),
       getLowStock(scope.outletId, 6),
       getRecentStockTakes(scope.outletId, 5),
-      getAutomationShare(scope.outletId),
       getValueByCategory(scope.outletId),
     ]);
 
@@ -153,19 +150,14 @@ export default async function DashboardPage({
           tone={summary.lowCount > 0 ? "clay" : "sage"}
         />
         <StatCard
-          label="Counted by AI"
-          value={
-            automation.total > 0
-              ? `${Math.round(automation.aiShare * 100)}%`
-              : "—"
-          }
+          label="Open counts"
+          value={String(summary.draftCount)}
           hint={
-            automation.averageConfidence !== null
-              ? `Avg confidence ${Math.round(automation.averageConfidence * 100)}%`
-              : "Last 30 days"
+            summary.draftCount > 0
+              ? "Continue from Stock takes"
+              : "No drafts in progress"
           }
           tone="sage"
-          icon={<EyeMark className="w-9" />}
         />
         <StatCard
           label="Stock takes filed"
@@ -349,7 +341,7 @@ export default async function DashboardPage({
         {recentTakes.length === 0 ? (
           <EmptyState
             title="No stock takes yet"
-            description="Start a count and photograph your shelves — the AI does the rest."
+            description="Start a bar or kitchen count and work through each section."
             action={
               <ButtonLink href="/app/stock-takes/new">
                 Start a stock take

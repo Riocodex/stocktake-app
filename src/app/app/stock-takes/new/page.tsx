@@ -12,16 +12,16 @@ export const metadata: Metadata = { title: "New stock take" };
 
 const STEPS = [
   {
-    title: "Photograph each area",
-    body: "Shelf, fridge, back bar, dry store. One clear photo per area is enough.",
+    title: "Pick bar or kitchen",
+    body: "A count covers one side of the venue so the list stays short enough to work through.",
   },
   {
-    title: "AI reads and counts",
-    body: "Labels are matched to your catalogue, units are counted and visible price tags are read.",
+    title: "Open each section",
+    body: "Soft drinks, beer, dairy and the rest. Tick off every product as you count it.",
   },
   {
-    title: "Review and submit",
-    body: "Adjust anything that looks off, then submit to update your live stock.",
+    title: "Submit when you are done",
+    body: "Live stock updates from the counted figures. Download a spreadsheet afterwards.",
   },
 ];
 
@@ -43,8 +43,8 @@ export default async function NewStockTakePage() {
           Start a stock take
         </h1>
         <p className="mt-2 max-w-xl text-sm text-ink-muted">
-          Create the session first, then add photos. Nothing touches your live
-          stock until you submit.
+          Choose bar or kitchen first. Nothing touches your live stock until you
+          submit.
         </p>
       </header>
 

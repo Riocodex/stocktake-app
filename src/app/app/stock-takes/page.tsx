@@ -4,12 +4,18 @@ import type { Metadata } from "next";
 import { isSuperAdmin, requireUser, resolveOutletScope } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getOutlets } from "@/lib/queries";
-import { STOCK_TAKE_STATUS } from "@/lib/constants";
+import {
+  AREA_LABELS,
+  STOCK_TAKE_STATUS,
+  categoryMatchesArea,
+} from "@/lib/constants";
 import { formatDateTime, formatMoney } from "@/lib/format";
 import {
   Badge,
   ButtonLink,
+  Card,
   EmptyState,
+  ProgressRing,
   TableShell,
   Td,
   Th,
@@ -35,7 +41,7 @@ export default async function StockTakesPage({
         ? STOCK_TAKE_STATUS.SUBMITTED
         : null;
 
-  const [outlets, stockTakes] = await Promise.all([
+  const [outlets, stockTakes, categories] = await Promise.all([
     superAdmin ? getOutlets() : Promise.resolve([]),
     prisma.stockTake.findMany({
       where: {
@@ -47,11 +53,34 @@ export default async function StockTakesPage({
       include: {
         outlet: { select: { name: true } },
         user: { select: { name: true } },
-        lines: { select: { countedQty: true, unitPrice: true, source: true } },
-        _count: { select: { photos: true } },
+        lines: { select: { countedQty: true, unitPrice: true, itemId: true } },
       },
     }),
+    prisma.category.findMany({
+      include: { items: { where: { isActive: true }, select: { id: true } } },
+    }),
   ]);
+
+  function progressFor(area: string, countedItemIds: string[]) {
+    const countedSet = new Set(countedItemIds);
+    const matching = categories.filter((category) =>
+      categoryMatchesArea(category.area, area),
+    );
+    const total = matching.reduce(
+      (sum, category) => sum + category.items.length,
+      0,
+    );
+    const counted = matching.reduce(
+      (sum, category) =>
+        sum + category.items.filter((item) => countedSet.has(item.id)).length,
+      0,
+    );
+    return { counted, total };
+  }
+
+  const drafts = stockTakes.filter(
+    (take) => take.status === STOCK_TAKE_STATUS.DRAFT,
+  );
 
   const tabs = [
     { key: "all", label: "All" },
@@ -92,6 +121,44 @@ export default async function StockTakesPage({
         </div>
       </header>
 
+      {drafts.length > 0 && activeTab !== "submitted" ? (
+        <section className="grid gap-4 md:grid-cols-2">
+          {drafts.map((take) => {
+            const progress = progressFor(
+              take.area,
+              take.lines.map((line) => line.itemId),
+            );
+            return (
+              <Card
+                key={take.id}
+                className="flex flex-wrap items-center gap-4 p-5"
+              >
+                <ProgressRing
+                  value={progress.counted}
+                  total={progress.total}
+                  size={72}
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="eyebrow text-clay">Active stock take</p>
+                  <p className="display-heading mt-1 text-xl text-ink">
+                    {take.reference}
+                  </p>
+                  <p className="mt-1 text-xs text-ink-muted">
+                    {AREA_LABELS[take.area] ?? take.area}
+                    {!scope.outletId ? ` · ${take.outlet.name}` : ""}
+                    {" · "}
+                    {progress.counted} of {progress.total} items
+                  </p>
+                </div>
+                <ButtonLink href={`/app/stock-takes/${take.id}`} size="sm">
+                  Continue
+                </ButtonLink>
+              </Card>
+            );
+          })}
+        </section>
+      ) : null}
+
       <div className="flex gap-2">
         {tabs.map((tab) => (
           <Link
@@ -111,7 +178,7 @@ export default async function StockTakesPage({
       {stockTakes.length === 0 ? (
         <EmptyState
           title="No stock takes here yet"
-          description="Start a count, photograph your shelves, and the AI will do the counting."
+          description="Start a bar or kitchen count and work through each section."
           action={
             <ButtonLink href="/app/stock-takes/new">
               Start a stock take
@@ -124,10 +191,9 @@ export default async function StockTakesPage({
             <>
               <Th>Reference</Th>
               {!scope.outletId ? <Th>Outlet</Th> : null}
+              <Th>Section</Th>
               <Th>Counted by</Th>
               <Th className="text-right">Lines</Th>
-              <Th className="text-right">AI</Th>
-              <Th className="text-right">Photos</Th>
               <Th className="text-right">Value</Th>
               <Th>Status</Th>
               <Th>Date</Th>
@@ -139,9 +205,6 @@ export default async function StockTakesPage({
               (sum, line) => sum + line.countedQty * line.unitPrice,
               0,
             );
-            const aiCount = take.lines.filter(
-              (line) => line.source === "AI",
-            ).length;
 
             return (
               <tr key={take.id} className="transition-colors hover:bg-cream/60">
@@ -152,21 +215,15 @@ export default async function StockTakesPage({
                   >
                     {take.reference}
                   </Link>
-                  {take.note ? (
-                    <span className="block max-w-[16rem] truncate text-[11px] text-ink-muted">
-                      {take.note}
-                    </span>
-                  ) : null}
                 </Td>
                 {!scope.outletId ? <Td>{take.outlet.name}</Td> : null}
+                <Td>
+                  <Badge tone="sage">
+                    {AREA_LABELS[take.area] ?? take.area}
+                  </Badge>
+                </Td>
                 <Td>{take.user.name}</Td>
                 <Td className="text-right">{take.lines.length}</Td>
-                <Td className="text-right text-xs text-sage-700">
-                  {take.lines.length > 0
-                    ? `${Math.round((aiCount / take.lines.length) * 100)}%`
-                    : "—"}
-                </Td>
-                <Td className="text-right">{take._count.photos}</Td>
                 <Td className="text-right font-semibold text-ink">
                   {formatMoney(value)}
                 </Td>

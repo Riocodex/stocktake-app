@@ -4,9 +4,12 @@ import bcrypt from "bcryptjs";
 
 import { prisma } from "../src/lib/db";
 import {
+  AREA_BOTH,
+  CATEGORY_AREAS,
   LINE_SOURCE,
   PHOTO_STATUS,
   ROLES,
+  STOCK_AREAS,
   STOCK_TAKE_STATUS,
 } from "../src/lib/constants";
 
@@ -209,6 +212,8 @@ async function main() {
   console.log("Clearing existing data…");
   await prisma.activityLog.deleteMany();
   await prisma.priceHistory.deleteMany();
+  await prisma.deliveryLine.deleteMany();
+  await prisma.delivery.deleteMany();
   await prisma.photoDetection.deleteMany();
   await prisma.stockTakeLine.deleteMany();
   await prisma.stockPhoto.deleteMany();
@@ -271,7 +276,11 @@ async function main() {
 
   for (const [categoryName, categoryItems] of Object.entries(CATALOGUE)) {
     const category = await prisma.category.create({
-      data: { name: categoryName, sortOrder: sortOrder++ },
+      data: {
+        name: categoryName,
+        sortOrder: sortOrder++,
+        area: CATEGORY_AREAS[categoryName] ?? AREA_BOTH,
+      },
     });
 
     for (const itemSeed of categoryItems) {
@@ -286,6 +295,7 @@ async function main() {
           referencePrice: itemSeed.referencePrice,
           parLevel: itemSeed.parLevel,
           lowStockThreshold: itemSeed.lowStockThreshold,
+          supplierPackQty: Math.max(1, Math.round(itemSeed.parLevel * 0.25)),
           aliases: itemSeed.aliases ?? "",
         },
       });
@@ -345,6 +355,7 @@ async function main() {
           outletId: outlet.id,
           userId: admin.id,
           status: STOCK_TAKE_STATUS.SUBMITTED,
+          area: index % 2 === 0 ? STOCK_AREAS.BAR : STOCK_AREAS.KITCHEN,
           note: index === 0 ? "Weekly count" : "Mid-week spot check",
           createdAt,
           submittedAt: new Date(createdAt.getTime() + 40 * 60_000),
@@ -427,6 +438,7 @@ async function main() {
           outletId: outlet.id,
           userId: admin.id,
           status: STOCK_TAKE_STATUS.DRAFT,
+          area: STOCK_AREAS.BAR,
           note: "Bar shelf recount",
           createdAt,
         },

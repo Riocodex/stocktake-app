@@ -2,21 +2,39 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 
-import { assertOutletAccess, requireUser } from "@/lib/auth";
+import { assertOutletAccess, isSuperAdmin, requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { isAiConfigured } from "@/lib/ai";
-import { PHOTO_STATUS, STOCK_TAKE_STATUS } from "@/lib/constants";
+import {
+  AREA_LABELS,
+  PHOTO_STATUS,
+  STOCK_TAKE_STATUS,
+  categoryMatchesArea,
+} from "@/lib/constants";
 import { formatDateTime, formatMoney, formatRelative } from "@/lib/format";
-import { Badge, Card, EmptyState, SectionHeading } from "@/components/ui";
+import {
+  Badge,
+  Card,
+  ProgressRing,
+  SectionHeading,
+} from "@/components/ui";
 import { PhotoUploader } from "./photo-uploader";
 import { LineEditor, type EditableLine } from "./line-editor";
 import {
-  AddLineForm,
   DetectionResolver,
   SubmitPanel,
   type CatalogueOption,
   type UnmatchedDetection,
 } from "./draft-controls";
+import {
+  CategoryChecklist,
+  type ChecklistCategory,
+} from "./category-checklist";
+import { CountedPanel } from "./counted-panel";
+import {
+  DownloadHint,
+  DownloadStockTakeButton,
+} from "./download-button";
 
 export const metadata: Metadata = { title: "Stock take" };
 
@@ -27,6 +45,7 @@ export default async function StockTakeDetailPage({
 }) {
   const { id } = await params;
   const user = await requireUser();
+  const canEditPrices = isSuperAdmin(user);
 
   const stockTake = await prisma.stockTake.findUnique({
     where: { id },
@@ -53,19 +72,86 @@ export default async function StockTakeDetailPage({
   }
 
   const isDraft = stockTake.status === STOCK_TAKE_STATUS.DRAFT;
+  const areaLabel = AREA_LABELS[stockTake.area] ?? stockTake.area;
 
-  const [unmatchedRaw, catalogue] = await Promise.all([
+  const [unmatchedRaw, categoriesRaw, outletStock] = await Promise.all([
     prisma.photoDetection.findMany({
       where: { stockTakeId: id, status: "UNMATCHED" },
       include: { photo: { select: { url: true } } },
       orderBy: { createdAt: "asc" },
     }),
-    prisma.inventoryItem.findMany({
-      where: { isActive: true },
-      include: { category: true },
-      orderBy: [{ category: { sortOrder: "asc" } }, { name: "asc" }],
+    prisma.category.findMany({
+      where: { items: { some: { isActive: true } } },
+      include: {
+        items: {
+          where: { isActive: true },
+          orderBy: { name: "asc" },
+        },
+      },
+      orderBy: { sortOrder: "asc" },
+    }),
+    prisma.outletStock.findMany({
+      where: { outletId: stockTake.outletId },
+      select: { itemId: true, quantity: true, unitPrice: true },
     }),
   ]);
+
+  const stockByItem = new Map(
+    outletStock.map((row) => [row.itemId, row] as const),
+  );
+  const lineByItem = new Map(
+    stockTake.lines.map((line) => [line.itemId, line] as const),
+  );
+
+  const relevantCategories = categoriesRaw.filter((category) =>
+    categoryMatchesArea(category.area, stockTake.area),
+  );
+
+  const checklist: ChecklistCategory[] = relevantCategories.map((category) => ({
+    id: category.id,
+    name: category.name,
+    items: category.items.map((item) => {
+      const stock = stockByItem.get(item.id);
+      const line = lineByItem.get(item.id);
+      return {
+        id: item.id,
+        name: item.brand ? `${item.brand} ${item.name}` : item.name,
+        sku: item.sku,
+        unit: item.unit,
+        onRecord: stock?.quantity ?? 0,
+        unitPrice: line?.unitPrice ?? stock?.unitPrice ?? item.referencePrice,
+        lineId: line?.id ?? null,
+        countedQty: line?.countedQty ?? null,
+        imageUrl: item.imageUrl ?? line?.photo?.url ?? null,
+      };
+    }),
+  }));
+
+  const totalItems = checklist.reduce(
+    (sum, category) => sum + category.items.length,
+    0,
+  );
+  const countedItems = checklist.reduce(
+    (sum, category) =>
+      sum + category.items.filter((item) => item.lineId).length,
+    0,
+  );
+
+  const countedList = stockTake.lines.map((line) => ({
+    id: line.itemId,
+    name: line.item.brand
+      ? `${line.item.brand} ${line.item.name}`
+      : line.item.name,
+    sku: line.item.sku,
+    unit: line.item.unit,
+    onRecord: stockByItem.get(line.itemId)?.quantity ?? line.previousQty,
+    unitPrice: line.unitPrice,
+    lineId: line.id,
+    countedQty: line.countedQty,
+    imageUrl: line.item.imageUrl ?? line.photo?.url ?? null,
+    category: line.item.category.name,
+    categoryId: line.item.category.id,
+  }));
 
   const lines: EditableLine[] = stockTake.lines.map((line) => ({
     id: line.id,
@@ -95,22 +181,19 @@ export default async function StockTakeDetailPage({
     photoUrl: detection.photo?.url ?? null,
   }));
 
-  const options: CatalogueOption[] = catalogue.map((item) => ({
-    id: item.id,
-    label: `${item.brand ? `${item.brand} ` : ""}${item.name} (${item.sku})`,
-    category: item.category.name,
-    unit: item.unit,
-  }));
+  const options: CatalogueOption[] = relevantCategories.flatMap((category) =>
+    category.items.map((item) => ({
+      id: item.id,
+      label: `${item.brand ? `${item.brand} ` : ""}${item.name} (${item.sku})`,
+      category: category.name,
+      unit: item.unit,
+    })),
+  );
 
   const totalValue = lines.reduce(
     (sum, line) => sum + line.countedQty * line.unitPrice,
     0,
   );
-  const aiLines = lines.filter((line) => line.source === "AI").length;
-  const shrinkage = lines.reduce((sum, line) => {
-    const delta = line.countedQty - line.previousQty;
-    return delta < 0 ? sum + delta * line.unitPrice : sum;
-  }, 0);
 
   return (
     <div className="space-y-8">
@@ -131,6 +214,7 @@ export default async function StockTakeDetailPage({
             ) : (
               <Badge tone="ok">Submitted</Badge>
             )}
+            <Badge tone="sage">{areaLabel}</Badge>
           </div>
           <p className="mt-2 text-sm text-ink-muted">
             {stockTake.outlet.name} · started by {stockTake.user.name} ·{" "}
@@ -139,29 +223,19 @@ export default async function StockTakeDetailPage({
               ? ` · filed ${formatRelative(stockTake.submittedAt)}`
               : ""}
           </p>
-          {stockTake.note ? (
-            <p className="mt-2 max-w-xl rounded-2xl bg-cream-deep/70 px-3 py-2 text-xs text-ink-soft">
-              {stockTake.note}
-            </p>
-          ) : null}
         </div>
 
-        <div className="grid grid-cols-3 gap-4 text-right">
-          <div>
-            <p className="eyebrow text-ink-muted">Lines</p>
+        <div className="flex items-center gap-4">
+          <ProgressRing value={countedItems} total={totalItems} size={80} />
+          <div className="text-right">
+            <p className="eyebrow text-ink-muted">Progress</p>
             <p className="display-heading mt-1 text-2xl text-ink">
-              {lines.length}
+              {countedItems}/{totalItems}
             </p>
-          </div>
-          <div>
-            <p className="eyebrow text-ink-muted">By AI</p>
-            <p className="display-heading mt-1 text-2xl text-sage-700">
-              {aiLines}
+            <p className="text-xs text-ink-muted">
+              {areaLabel.toLowerCase()} items counted
             </p>
-          </div>
-          <div>
-            <p className="eyebrow text-ink-muted">Value</p>
-            <p className="display-heading mt-1 text-2xl text-clay">
+            <p className="mt-1 display-heading text-lg text-clay">
               {formatMoney(totalValue)}
             </p>
           </div>
@@ -170,8 +244,32 @@ export default async function StockTakeDetailPage({
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
+          <section>
+            <SectionHeading
+              title={`${areaLabel} sections`}
+              description={
+                isDraft
+                  ? "Open a section, count each product, and the bubble turns green when it is on this take."
+                  : "Green checks were counted in this session."
+              }
+            />
+            <CategoryChecklist
+              stockTakeId={id}
+              categories={checklist}
+              canEditPrices={canEditPrices}
+              editable={isDraft}
+            />
+          </section>
+
           {isDraft ? (
-            <PhotoUploader stockTakeId={id} simulated={!isAiConfigured()} />
+            <details className="rounded-3xl border border-ink/8 bg-white px-5 py-4">
+              <summary className="cursor-pointer text-sm font-semibold text-ink">
+                Optional: photograph a shelf
+              </summary>
+              <div className="mt-4">
+                <PhotoUploader stockTakeId={id} simulated={!isAiConfigured()} />
+              </div>
+            </details>
           ) : null}
 
           {stockTake.photos.length > 0 ? (
@@ -180,7 +278,7 @@ export default async function StockTakeDetailPage({
                 title="Photos"
                 description={`${stockTake.photos.length} image${
                   stockTake.photos.length === 1 ? "" : "s"
-                } analysed for this count.`}
+                } attached to this count.`}
               />
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                 {stockTake.photos.map((photo) => (
@@ -215,7 +313,7 @@ export default async function StockTakeDetailPage({
           ) : null}
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
           {isDraft ? (
             <SubmitPanel
               stockTakeId={id}
@@ -230,69 +328,48 @@ export default async function StockTakeDetailPage({
                 Submitted {formatDateTime(stockTake.submittedAt)}. Live stock for{" "}
                 {stockTake.outlet.name} was updated from these figures.
               </p>
+              <div className="mt-4 space-y-2">
+                <DownloadStockTakeButton
+                  stockTakeId={id}
+                  reference={stockTake.reference}
+                />
+                <DownloadHint totalValue={totalValue} />
+              </div>
             </Card>
           )}
 
-          <Card>
-            <p className="eyebrow text-ink-muted">Count summary</p>
-            <dl className="mt-4 space-y-3 text-sm">
-              <div className="flex justify-between gap-3">
-                <dt className="text-ink-muted">Counted value</dt>
-                <dd className="font-semibold text-ink">
-                  {formatMoney(totalValue)}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-3">
-                <dt className="text-ink-muted">Lines from AI</dt>
-                <dd className="font-semibold text-ink">
-                  {aiLines}/{lines.length}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-3">
-                <dt className="text-ink-muted">Negative variance</dt>
-                <dd
-                  className={
-                    shrinkage < 0
-                      ? "font-semibold text-red-600"
-                      : "font-semibold text-ink"
-                  }
-                >
-                  {formatMoney(shrinkage)}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-3">
-                <dt className="text-ink-muted">Photos</dt>
-                <dd className="font-semibold text-ink">
-                  {stockTake.photos.length}
-                </dd>
-              </div>
-            </dl>
-          </Card>
+          <section>
+            <SectionHeading title="Counted items" />
+            <CountedPanel items={countedList} />
+          </section>
         </div>
       </div>
 
-      {/* Full width: the line table has too many columns for a third of the page. */}
-      <section>
-        <SectionHeading
-          title="Counted lines"
-          description={
-            isDraft
-              ? "Edit any figure inline. Changes save when you leave the field."
-              : "This count has been filed and is read-only."
-          }
-        />
-
-        {lines.length === 0 ? (
-          <EmptyState
-            title="Nothing counted yet"
-            description="Add a photo above and the AI will fill this in, or add products by hand."
+      {lines.length > 0 && (canEditPrices || !isDraft) ? (
+        <section>
+          <SectionHeading
+            title="Count detail"
+            description={
+              canEditPrices && isDraft
+                ? "Super admins can adjust unit prices here before filing."
+                : "Read-only record of this count."
+            }
+            action={
+              !isDraft ? (
+                <DownloadStockTakeButton
+                  stockTakeId={id}
+                  reference={stockTake.reference}
+                />
+              ) : null
+            }
           />
-        ) : (
-          <LineEditor lines={lines} editable={isDraft} />
-        )}
-      </section>
-
-      {isDraft ? <AddLineForm stockTakeId={id} options={options} /> : null}
+          <LineEditor
+            lines={lines}
+            editable={isDraft && canEditPrices}
+            canEditPrices={canEditPrices}
+          />
+        </section>
+      ) : null}
     </div>
   );
 }
