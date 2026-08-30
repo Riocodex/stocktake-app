@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "TRiBE Stock",
+    "slug": "tribe-stock",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "scheme": "tribestock",
+    "splash": {
+      "backgroundColor": "#fbf6ef"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.tribemalta.stock",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        },
+        "NSCameraUsageDescription": "TRiBE Stock photographs shelves to help count stock.",
+        "NSPhotoLibraryUsageDescription": "TRiBE Stock uses a shelf photo to help count stock."
+      }
+    },
+    "android": {
+      "package": "com.tribemalta.stock",
+      "adaptiveIcon": {
+        "backgroundColor": "#fbf6ef",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "TRiBE Stock uses a shelf photo to help count stock.",
+          "cameraPermission": "TRiBE Stock photographs shelves to help count stock."
+        }
+      ]
+    ]
+  }
+}

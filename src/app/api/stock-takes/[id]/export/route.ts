@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertOutletAccess, getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { AREA_LABELS, STOCK_TAKE_STATUS } from "@/lib/constants";
+import { CORS_HEADERS } from "@/lib/cors";
 import { formatDateTime, formatMoney, formatQty } from "@/lib/format";
 
 function csvCell(value: string | number | null | undefined) {
@@ -110,6 +111,7 @@ export async function GET(
 
   return new NextResponse(body, {
     headers: {
+      ...CORS_HEADERS,
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": `attachment; filename="${fileName}"`,
     },

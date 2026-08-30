@@ -2,7 +2,7 @@ import "server-only";
 
 import bcrypt from "bcryptjs";
 import { SignJWT, jwtVerify } from "jose";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { prisma } from "@/lib/db";
@@ -29,14 +29,19 @@ export function verifyPassword(password: string, hash: string) {
   return bcrypt.compare(password, hash);
 }
 
-export async function createSession(userId: string) {
+/** JWT used by the website cookie and by the phone app's Bearer token. */
+export async function issueSessionToken(userId: string) {
   const expires = new Date(Date.now() + SESSION_DAYS * 86_400_000);
-
   const token = await new SignJWT({ sub: userId })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(expires)
     .sign(secret());
+  return { token, expires };
+}
+
+export async function createSession(userId: string) {
+  const { token, expires } = await issueSessionToken(userId);
 
   const jar = await cookies();
   jar.set(COOKIE_NAME, token, {
@@ -46,6 +51,8 @@ export async function createSession(userId: string) {
     path: "/",
     expires,
   });
+
+  return token;
 }
 
 export async function destroySession() {
@@ -62,9 +69,69 @@ export type SessionUser = {
   outletName: string | null;
 };
 
-export async function getCurrentUser(): Promise<SessionUser | null> {
+export async function loginWithPassword(email: string, password: string) {
+  const normalised = email.trim().toLowerCase();
+  if (!normalised || !password) {
+    return { ok: false as const, error: "Enter your email and password." };
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { email: normalised },
+    include: { outlet: { select: { name: true } } },
+  });
+
+  const invalid = {
+    ok: false as const,
+    error: "Those details do not match an account.",
+  };
+  if (!user || !user.isActive) return invalid;
+
+  const passwordOk = await verifyPassword(password, user.passwordHash);
+  if (!passwordOk) return invalid;
+
+  if (user.role === ROLES.OUTLET_ADMIN && !user.outletId) {
+    return {
+      ok: false as const,
+      error:
+        "Your account is not linked to an outlet yet. Ask a super admin to assign one.",
+    };
+  }
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { lastLoginAt: new Date() },
+  });
+
+  const session: SessionUser = {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role as Role,
+    outletId: user.outletId,
+    outletName: user.outlet?.name ?? null,
+  };
+
+  return { ok: true as const, user: session };
+}
+
+async function readSessionToken() {
+  try {
+    const headerStore = await headers();
+    const auth = headerStore.get("authorization");
+    if (auth && auth.toLowerCase().startsWith("bearer ")) {
+      const bearer = auth.slice(7).trim();
+      if (bearer) return bearer;
+    }
+  } catch {
+    // `headers()` is unavailable in a few non-request contexts.
+  }
+
   const jar = await cookies();
-  const token = jar.get(COOKIE_NAME)?.value;
+  return jar.get(COOKIE_NAME)?.value ?? null;
+}
+
+export async function getCurrentUser(): Promise<SessionUser | null> {
+  const token = await readSessionToken();
   if (!token) return null;
 
   let userId: string;

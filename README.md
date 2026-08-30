@@ -5,7 +5,8 @@ Two things in one Next.js app:
 | Path | What it is |
 | --- | --- |
 | `/` | The public TRiBE Malta restaurant site (home, menu, locations, story, events, shop) |
-| `/app` | The staff stock-take app, behind a login |
+| `/app` | The staff stock-take **website**, behind a login |
+| `mobile/` | The staff stock-take **phone app** (Expo / iOS / Android) |
 
 The stock-take app reads shelf photos with a vision model, counts the units,
 reads any visible price tags, and updates the inventory once a human has
@@ -20,10 +21,14 @@ Requires **Node 20 or newer** (developed on Node 22).
 ```bash
 npm install
 npm run setup      # generates the Prisma client, creates the SQLite DB, seeds demo data
-npm run dev        # http://localhost:3000
+npm run dev        # http://localhost:3111
 ```
 
-`npm run setup` is a one-time step. After that, `npm run dev` is all you need.
+`npm run setup` is a one-time step. After that, `npm run dev` is all you need
+for the website (http://localhost:3111).
+
+The phone app lives in the `mobile/` folder and does not replace the website.
+See [mobile/README.md](mobile/README.md) to run it in Expo Go.
 
 ### Demo accounts
 
@@ -206,7 +211,8 @@ fields in `src/lib/site-content.ts` with real TRiBE photography.
 
 | Command | Does |
 | --- | --- |
-| `npm run dev` | Dev server |
+| `npm run dev` | Website + API at http://localhost:3111 |
+| `npm run app` | Phone app (Expo) |
 | `npm run build` | Production build |
 | `npm start` | Serve the production build |
 | `npm run setup` | Generate client, create DB, seed |

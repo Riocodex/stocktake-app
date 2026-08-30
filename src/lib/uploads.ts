@@ -29,3 +29,25 @@ export async function saveUploadedImage(file: File, prefix: string) {
 
   return `/uploads/${fileName}`;
 }
+
+export async function saveBase64Image(
+  base64: string,
+  type: string,
+  prefix: string,
+) {
+  const buffer = Buffer.from(base64, "base64");
+  if (buffer.length === 0) throw new Error("That image is empty.");
+  if (buffer.length > MAX_BYTES) throw new Error("Images must be under 10MB.");
+  if (type && !ALLOWED.has(type)) {
+    throw new Error(`Unsupported image type: ${type}`);
+  }
+
+  const extension =
+    type === "image/png" ? "png" : type === "image/webp" ? "webp" : "jpg";
+  const fileName = `${prefix}-${randomUUID()}.${extension}`;
+
+  await mkdir(UPLOAD_DIR, { recursive: true });
+  await writeFile(path.join(UPLOAD_DIR, fileName), buffer);
+
+  return `/uploads/${fileName}`;
+}

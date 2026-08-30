@@ -7,6 +7,7 @@ import { assertOutletAccess, getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { analyseStockPhoto, isAiConfigured } from "@/lib/ai";
 import { PHOTO_STATUS, STOCK_TAKE_STATUS } from "@/lib/constants";
+import { CORS_HEADERS } from "@/lib/cors";
 import { applyDetectionsToStockTake, getCatalogueForOutlet } from "@/lib/stock";
 
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -20,7 +21,10 @@ export async function POST(
 ) {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+    return NextResponse.json(
+      { error: "Not signed in." },
+      { status: 401, headers: CORS_HEADERS },
+    );
   }
 
   const { id } = await context.params;
