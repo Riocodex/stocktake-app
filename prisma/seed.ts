@@ -212,6 +212,7 @@ async function main() {
   console.log("Clearing existing data…");
   await prisma.activityLog.deleteMany();
   await prisma.priceHistory.deleteMany();
+  await prisma.wastage.deleteMany();
   await prisma.deliveryLine.deleteMany();
   await prisma.delivery.deleteMany();
   await prisma.photoDetection.deleteMany();

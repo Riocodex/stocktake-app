@@ -30,6 +30,7 @@ model Outlet {
   stockTakes  StockTake[]
   prices      PriceHistory[]
   deliveries  Delivery[]
+  wastage     Wastage[]
 
   @@map("outlets")
 }
@@ -49,6 +50,7 @@ model User {
   outlet     Outlet?     @relation(fields: [outletId], references: [id], onDelete: SetNull)
   stockTakes StockTake[]
   deliveries Delivery[]
+  wastage    Wastage[]
 
   @@index([outletId])
   @@map("users")
@@ -96,6 +98,7 @@ model InventoryItem {
   lines        StockTakeLine[]
   priceHistory PriceHistory[]
   deliveries   DeliveryLine[]
+  wastage      Wastage[]
 
   @@index([categoryId])
   @@index([name])
@@ -275,6 +278,34 @@ model DeliveryLine {
 
   @@index([itemId])
   @@map("delivery_lines")
+}
+
+/// Recorded inventory wastage. Item-only for now; `targetType` allows dish wastage later.
+model Wastage {
+  id         String   @id @default(cuid())
+  outletId   String
+  itemId     String
+  /// ITEM | DISH (dishes not implemented yet)
+  targetType String   @default("ITEM")
+  quantity   Float
+  /// Counting unit at time of wastage (from the catalogue item).
+  unit       String
+  /// EUR cost per unit at time of wastage (outlet price snapshot for audit).
+  unitCost   Float
+  /// SPOILED | EXPIRED | DAMAGED | PREPARATION_WASTE | OVERPRODUCTION | STAFF_ERROR | OTHER
+  reason     String
+  note       String?
+  userId     String
+  createdAt  DateTime @default(now())
+
+  outlet Outlet        @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  item   InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  user   User          @relation(fields: [userId], references: [id])
+
+  @@index([outletId, createdAt])
+  @@index([itemId, createdAt])
+  @@index([reason])
+  @@map("wastage")
 }
 
 model ActivityLog {

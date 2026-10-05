@@ -93,3 +93,36 @@ export const VARIANCE_ALERT_RATIO = 0.25;
 
 /// Below this model confidence a detected line is highlighted for review.
 export const LOW_CONFIDENCE_THRESHOLD = 0.7;
+
+/** Physical inventory wastage today; DISH reserved for future recipe wastage. */
+export const WASTAGE_TARGET = {
+  ITEM: "ITEM",
+  DISH: "DISH",
+} as const;
+
+export const WASTAGE_REASONS = {
+  SPOILED: "SPOILED",
+  EXPIRED: "EXPIRED",
+  DAMAGED: "DAMAGED",
+  PREPARATION_WASTE: "PREPARATION_WASTE",
+  OVERPRODUCTION: "OVERPRODUCTION",
+  STAFF_ERROR: "STAFF_ERROR",
+  OTHER: "OTHER",
+} as const;
+
+export type WastageReason =
+  (typeof WASTAGE_REASONS)[keyof typeof WASTAGE_REASONS];
+
+export const WASTAGE_REASON_LABELS: Record<WastageReason, string> = {
+  SPOILED: "Spoiled",
+  EXPIRED: "Expired",
+  DAMAGED: "Damaged",
+  PREPARATION_WASTE: "Preparation waste",
+  OVERPRODUCTION: "Overproduction",
+  STAFF_ERROR: "Staff error",
+  OTHER: "Other",
+};
+
+export function isWastageReason(value: string): value is WastageReason {
+  return Object.values(WASTAGE_REASONS).includes(value as WastageReason);
+}
