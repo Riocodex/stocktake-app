@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 
+import { isAiConfigured } from "@/lib/ai";
 import { isSuperAdmin, requireUser, resolveOutletScope } from "@/lib/auth";
 import {
   WASTAGE_REASON_LABELS,
@@ -171,6 +172,7 @@ export default async function WastagePage({
                   : user.outletName
               }
               recordPath="/app/inventory/wastage"
+              simulatedAi={!isAiConfigured()}
             />
           </div>
         </Card>
@@ -289,15 +291,27 @@ export default async function WastagePage({
                 {formatDateTime(row.createdAt)}
               </Td>
               <Td>
-                <Link
-                  href={`/app/inventory/${row.itemId}`}
-                  className="font-semibold text-ink hover:text-clay"
-                >
-                  {row.itemName}
-                </Link>
-                {row.note ? (
-                  <p className="mt-0.5 text-xs text-ink-muted">{row.note}</p>
-                ) : null}
+                <div className="flex items-start gap-3">
+                  {row.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={row.imageUrl}
+                      alt=""
+                      className="h-10 w-10 shrink-0 rounded-xl object-cover"
+                    />
+                  ) : null}
+                  <div>
+                    <Link
+                      href={`/app/inventory/${row.itemId}`}
+                      className="font-semibold text-ink hover:text-clay"
+                    >
+                      {row.itemName}
+                    </Link>
+                    {row.note ? (
+                      <p className="mt-0.5 text-xs text-ink-muted">{row.note}</p>
+                    ) : null}
+                  </div>
+                </div>
               </Td>
               <Td>
                 {formatQty(row.quantity)} {row.unit}

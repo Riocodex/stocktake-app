@@ -5,6 +5,7 @@ import {
   isSuperAdmin,
   type SessionUser,
 } from "@/lib/auth";
+import { analyseStockPhoto, isAiConfigured } from "@/lib/ai";
 import {
   WASTAGE_REASON_LABELS,
   WASTAGE_TARGET,
@@ -13,6 +14,8 @@ import {
 } from "@/lib/constants";
 import { prisma } from "@/lib/db";
 import { formatMoney, formatQty } from "@/lib/format";
+import { matchDetectedItem } from "@/lib/matching";
+import { getCatalogueForOutlet } from "@/lib/stock";
 
 export type RecordWastageInput = {
   outletId?: string | null;
@@ -20,6 +23,7 @@ export type RecordWastageInput = {
   quantity: number;
   reason: string;
   note?: string | null;
+  imageUrl?: string | null;
 };
 
 export type RecordWastageResult =
@@ -150,6 +154,8 @@ export async function recordItemWastage(
         );
       }
 
+      const imageUrl = String(input.imageUrl ?? "").trim() || null;
+
       const created = await tx.wastage.create({
         data: {
           outletId,
@@ -160,6 +166,7 @@ export async function recordItemWastage(
           unitCost,
           reason,
           note: note || null,
+          imageUrl,
           userId: user.id,
         },
       });
@@ -322,6 +329,7 @@ export async function listWastage(
       reason: row.reason as WastageReason,
       reasonLabel: WASTAGE_REASON_LABELS[row.reason as WastageReason] ?? row.reason,
       note: row.note,
+      imageUrl: row.imageUrl,
       itemId: row.item.id,
       itemName: row.item.brand
         ? `${row.item.brand} ${row.item.name}`
@@ -341,6 +349,144 @@ export async function listWastage(
 
 function emptySummary() {
   return { todayValue: 0, todayCount: 0, mostWastedName: null as string | null };
+}
+
+export type WastagePhotoSuggestion = {
+  key: string;
+  itemId: string;
+  name: string;
+  unit: string;
+  /** Quantity the model counted in the photo. */
+  detectedQuantity: number;
+  /** Quantity suggested for wastage, capped to on-hand stock. */
+  quantity: number;
+  onHand: number;
+  confidence: number;
+  label: string;
+  matchReason: string;
+  canWaste: boolean;
+};
+
+/**
+ * Analyse a wastage photo against one outlet's catalogue.
+ * Does NOT change stock — the user must confirm suggestions first.
+ */
+export async function analyzeWastagePhoto(
+  user: SessionUser,
+  input: {
+    outletId?: string | null;
+    bytes: Uint8Array;
+    mimeType: string;
+    imageUrl: string;
+  },
+) {
+  const requestedOutlet = String(input.outletId ?? "").trim();
+  const outletId = isSuperAdmin(user) ? requestedOutlet : user.outletId;
+  if (!outletId) {
+    return { ok: false as const, error: "Choose which outlet this photo is for." };
+  }
+  if (
+    !isSuperAdmin(user) &&
+    requestedOutlet &&
+    requestedOutlet !== user.outletId
+  ) {
+    return { ok: false as const, error: "You do not have access to that outlet." };
+  }
+  try {
+    assertOutletAccess(user, outletId);
+  } catch {
+    return { ok: false as const, error: "You do not have access to that outlet." };
+  }
+
+  const catalogue = await getCatalogueForOutlet(outletId);
+  const analysis = await analyseStockPhoto(
+    input.bytes,
+    input.mimeType || "image/jpeg",
+    catalogue,
+  );
+
+  const candidates = catalogue.map((entry) => ({
+    id: entry.id,
+    sku: entry.sku,
+    name: entry.name,
+    brand: entry.brand,
+    aliases: entry.aliases,
+  }));
+  const byId = new Map(catalogue.map((entry) => [entry.id, entry]));
+
+  const merged = new Map<
+    string,
+    {
+      itemId: string;
+      detectedQuantity: number;
+      confidence: number;
+      label: string;
+      matchReason: string;
+    }
+  >();
+  const unmatched: { label: string; quantity: number; confidence: number }[] =
+    [];
+
+  for (const detected of analysis.items) {
+    const match = matchDetectedItem(detected, candidates);
+    if (!match) {
+      unmatched.push({
+        label: detected.label,
+        quantity: detected.quantity,
+        confidence: detected.confidence,
+      });
+      continue;
+    }
+    const existing = merged.get(match.itemId);
+    if (existing) {
+      existing.detectedQuantity += detected.quantity;
+      existing.confidence = Math.max(existing.confidence, detected.confidence);
+      existing.label = `${existing.label}; ${detected.label}`.slice(0, 200);
+    } else {
+      merged.set(match.itemId, {
+        itemId: match.itemId,
+        detectedQuantity: detected.quantity,
+        confidence: detected.confidence,
+        label: detected.label,
+        matchReason: match.reason,
+      });
+    }
+  }
+
+  const suggestions: WastagePhotoSuggestion[] = [];
+  for (const row of merged.values()) {
+    const entry = byId.get(row.itemId);
+    if (!entry) continue;
+    const onHand = Math.round(entry.currentQty * 100) / 100;
+    const detectedQuantity = Math.round(row.detectedQuantity * 100) / 100;
+    const quantity = Math.min(detectedQuantity, onHand);
+    suggestions.push({
+      key: row.itemId,
+      itemId: row.itemId,
+      name: entry.brand ? `${entry.brand} ${entry.name}` : entry.name,
+      unit: entry.unit,
+      detectedQuantity,
+      quantity,
+      onHand,
+      confidence: row.confidence,
+      label: row.label,
+      matchReason: row.matchReason,
+      canWaste: onHand > 0 && quantity > 0,
+    });
+  }
+
+  suggestions.sort((a, b) => b.confidence - a.confidence);
+
+  return {
+    ok: true as const,
+    imageUrl: input.imageUrl,
+    provider: analysis.provider,
+    simulated: !isAiConfigured(),
+    detected: analysis.items.length,
+    matched: suggestions.length,
+    unmatched,
+    suggestions,
+  };
 }
 
 function startOfLocalDay() {

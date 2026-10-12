@@ -26,6 +26,7 @@ export async function recordWastageAction(
     quantity: Number(formData.get("quantity") ?? 0),
     reason: String(formData.get("reason") ?? ""),
     note: String(formData.get("note") ?? ""),
+    imageUrl: String(formData.get("imageUrl") ?? ""),
   });
 
   if (!result.ok) return { error: result.error };

@@ -55,7 +55,32 @@ export async function POST(request: NextRequest) {
       quantity?: number;
       reason?: string;
       note?: string;
+      imageUrl?: string;
+      lines?: {
+        itemId: string;
+        quantity: number;
+        reason?: string;
+        note?: string;
+      }[];
     }>(request);
+
+    // Multi-line confirm from a photo analysis.
+    if (body.lines && body.lines.length > 0) {
+      const recorded = [];
+      for (const line of body.lines) {
+        const result = await recordItemWastage(user, {
+          outletId: body.outletId,
+          itemId: line.itemId,
+          quantity: Number(line.quantity ?? 0),
+          reason: line.reason || body.reason || "",
+          note: line.note ?? body.note,
+          imageUrl: body.imageUrl,
+        });
+        if (!result.ok) throw new ApiError(400, result.error);
+        recorded.push(result.wastage);
+      }
+      return apiJson({ ok: true, wastage: recorded, count: recorded.length });
+    }
 
     const result = await recordItemWastage(user, {
       outletId: body.outletId,
@@ -63,6 +88,7 @@ export async function POST(request: NextRequest) {
       quantity: Number(body.quantity ?? 0),
       reason: body.reason ?? "",
       note: body.note,
+      imageUrl: body.imageUrl,
     });
 
     if (!result.ok) throw new ApiError(400, result.error);

@@ -12,6 +12,7 @@ import {
   type WastageReason,
 } from "@/lib/constants";
 import { Button } from "@/components/ui";
+import { WastagePhotoPanel } from "./wastage-photo";
 
 const INITIAL: WastageActionResult = { error: null };
 
@@ -30,6 +31,7 @@ export function WastageForm({
   fixedOutletId,
   fixedOutletName,
   recordPath,
+  simulatedAi,
 }: {
   outlets: { id: string; name: string }[];
   items: CatalogItem[];
@@ -37,6 +39,7 @@ export function WastageForm({
   fixedOutletName: string | null;
   /** Path used to reload stock when the outlet changes, e.g. /app/inventory/wastage?record=1 */
   recordPath: string;
+  simulatedAi: boolean;
 }) {
   const router = useRouter();
   const [state, formAction, pending] = useActionState(
@@ -184,6 +187,10 @@ export function WastageForm({
           </button>
         ) : null}
       </div>
+
+      <WastagePhotoPanel outletId={fixedOutletId} simulated={simulatedAi} />
+
+      <p className="eyebrow text-ink-muted">Or record manually</p>
 
       <div>
         <label htmlFor="itemId" className="eyebrow mb-2 block text-ink-muted">

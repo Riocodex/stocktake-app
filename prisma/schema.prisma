@@ -295,6 +295,8 @@ model Wastage {
   /// SPOILED | EXPIRED | DAMAGED | PREPARATION_WASTE | OVERPRODUCTION | STAFF_ERROR | OTHER
   reason     String
   note       String?
+  /// Optional photo that identified this wastage (same URL may appear on several rows).
+  imageUrl   String?
   userId     String
   createdAt  DateTime @default(now())
 

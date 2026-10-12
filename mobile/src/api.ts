@@ -58,13 +58,18 @@ async function request<T>(
   options: RequestInit & { token?: string | null; json?: boolean } = {},
 ): Promise<T> {
   const { token, headers, json = true, ...rest } = options;
+  const isFormData =
+    typeof FormData !== "undefined" && rest.body instanceof FormData;
   let response: Response;
   try {
     response = await fetch(`${API_URL}${path}`, {
       ...rest,
       headers: {
         Accept: json ? "application/json" : "*/*",
-        ...(rest.body && json ? { "Content-Type": "application/json" } : {}),
+        // Let the runtime set multipart boundaries for FormData uploads.
+        ...(rest.body && json && !isFormData
+          ? { "Content-Type": "application/json" }
+          : {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...headers,
       },

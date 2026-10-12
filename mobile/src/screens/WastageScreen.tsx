@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import {
+  Image,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -12,7 +13,7 @@ import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { api, money, qty, withQuery } from "../api";
+import { api, mediaUrl, money, qty, withQuery } from "../api";
 import { useAuth } from "../auth";
 import { formatWhen } from "../format";
 import type { RootStackParamList } from "../navigation";
@@ -28,6 +29,7 @@ type WastageRow = {
   value: number;
   reasonLabel: string;
   note: string | null;
+  imageUrl: string | null;
   itemName: string;
   outletName: string;
   recordedBy: string;
@@ -126,9 +128,14 @@ export function WastageScreen() {
         style={styles.input}
       />
 
-      {(data?.rows ?? []).map((row) => (
+      {(data?.rows ?? []).map((row) => {
+        const thumb = mediaUrl(row.imageUrl);
+        return (
         <View key={row.id} style={styles.card}>
           <View style={styles.rowTop}>
+            {thumb ? (
+              <Image source={{ uri: thumb }} style={styles.thumb} />
+            ) : null}
             <Text style={styles.rowTitle}>{row.itemName}</Text>
             <Badge tone="draft">{row.reasonLabel}</Badge>
           </View>
@@ -141,7 +148,8 @@ export function WastageScreen() {
           </Text>
           {row.note ? <Text style={styles.note}>{row.note}</Text> : null}
         </View>
-      ))}
+        );
+      })}
 
       {data && data.rows.length === 0 ? (
         <Text style={styles.copy}>No wastage recorded yet.</Text>
@@ -178,6 +186,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   rowTitle: { color: colors.ink, fontWeight: "800", flex: 1, fontSize: 16 },
+  thumb: { width: 40, height: 40, borderRadius: 10, backgroundColor: colors.sand },
   meta: { color: colors.muted, fontSize: 12, marginTop: 6 },
   note: { color: colors.inkSoft, fontSize: 12, marginTop: 6 },
 });
