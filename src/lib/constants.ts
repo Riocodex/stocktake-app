@@ -147,3 +147,38 @@ export const TRANSFER_STATUS_LABELS: Record<TransferStatus, string> = {
 export function isTransferStatus(value: string): value is TransferStatus {
   return Object.values(TRANSFER_STATUS).includes(value as TransferStatus);
 }
+
+export const STOCK_MOVEMENT_TYPE = {
+  STOCK_TAKE_ADJUSTMENT: "STOCK_TAKE_ADJUSTMENT",
+  DELIVERY: "DELIVERY",
+  WASTAGE: "WASTAGE",
+  TRANSFER_OUT: "TRANSFER_OUT",
+  TRANSFER_IN: "TRANSFER_IN",
+  MANUAL_ADJUSTMENT: "MANUAL_ADJUSTMENT",
+} as const;
+
+export type StockMovementType =
+  (typeof STOCK_MOVEMENT_TYPE)[keyof typeof STOCK_MOVEMENT_TYPE];
+
+export const STOCK_MOVEMENT_TYPE_LABELS: Record<StockMovementType, string> = {
+  STOCK_TAKE_ADJUSTMENT: "Stock take",
+  DELIVERY: "Delivery",
+  WASTAGE: "Wastage",
+  TRANSFER_OUT: "Transfer out",
+  TRANSFER_IN: "Transfer in",
+  MANUAL_ADJUSTMENT: "Manual adjustment",
+};
+
+export function isStockMovementType(value: string): value is StockMovementType {
+  return Object.values(STOCK_MOVEMENT_TYPE).includes(value as StockMovementType);
+}
+
+export const STOCK_MOVEMENT_REFERENCE = {
+  STOCK_TAKE: "STOCK_TAKE",
+  STOCK_TAKE_LINE: "STOCK_TAKE_LINE",
+  DELIVERY: "DELIVERY",
+  DELIVERY_LINE: "DELIVERY_LINE",
+  WASTAGE: "WASTAGE",
+  TRANSFER: "TRANSFER",
+  TRANSFER_LINE: "TRANSFER_LINE",
+} as const;

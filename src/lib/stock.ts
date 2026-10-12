@@ -1,7 +1,13 @@
 import { prisma } from "@/lib/db";
-import { LINE_SOURCE, STOCK_TAKE_STATUS } from "@/lib/constants";
+import {
+  LINE_SOURCE,
+  STOCK_MOVEMENT_REFERENCE,
+  STOCK_MOVEMENT_TYPE,
+  STOCK_TAKE_STATUS,
+} from "@/lib/constants";
 import type { CatalogueEntry, DetectedItem } from "@/lib/ai";
 import { matchDetectedItem, type MatchCandidate } from "@/lib/matching";
+import { createStockMovement } from "@/lib/stock-movements";
 
 /**
  * Builds the prompt catalogue for an outlet: every active global item, joined
@@ -210,10 +216,18 @@ export async function submitStockTake(
         where: {
           outletId_itemId: { outletId: stockTake.outletId, itemId: line.itemId },
         },
+        include: { item: { select: { unit: true } } },
       });
 
+      const quantityBefore = existing?.quantity ?? 0;
+      const quantityAfter = line.countedQty;
+      const quantityChange =
+        Math.round((quantityAfter - quantityBefore) * 100) / 100;
+
       const previousPrice = existing?.unitPrice ?? 0;
-      const nextPrice = updatePrices ? line.unitPrice : (existing?.unitPrice ?? line.unitPrice);
+      const nextPrice = updatePrices
+        ? line.unitPrice
+        : (existing?.unitPrice ?? line.unitPrice);
 
       await tx.outletStock.upsert({
         where: {
@@ -233,6 +247,33 @@ export async function submitStockTake(
         },
       });
 
+      // Record the adjustment only — never the full counted qty as a movement.
+      if (quantityChange !== 0) {
+        const unit =
+          existing?.item.unit ??
+          (
+            await tx.inventoryItem.findUnique({
+              where: { id: line.itemId },
+              select: { unit: true },
+            })
+          )?.unit ??
+          "unit";
+        await createStockMovement(tx, {
+          outletId: stockTake.outletId,
+          itemId: line.itemId,
+          movementType: STOCK_MOVEMENT_TYPE.STOCK_TAKE_ADJUSTMENT,
+          quantityChange,
+          unit,
+          quantityBefore,
+          quantityAfter,
+          performedById: stockTake.userId,
+          referenceType: STOCK_MOVEMENT_REFERENCE.STOCK_TAKE_LINE,
+          referenceId: line.id,
+          note: stockTake.reference,
+          createdAt: now,
+        });
+      }
+
       if (
         updatePrices &&
         line.unitPrice > 0 &&
@@ -250,10 +291,17 @@ export async function submitStockTake(
       }
     }
 
-    await tx.stockTake.update({
-      where: { id: stockTakeId },
+    // Conditional status flip prevents duplicate submit applying stock twice.
+    const submitted = await tx.stockTake.updateMany({
+      where: {
+        id: stockTakeId,
+        status: { not: STOCK_TAKE_STATUS.SUBMITTED },
+      },
       data: { status: STOCK_TAKE_STATUS.SUBMITTED, submittedAt: now },
     });
+    if (submitted.count !== 1) {
+      throw new Error("This stock take has already been submitted.");
+    }
 
     await tx.activityLog.create({
       data: {

@@ -4,7 +4,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { assertOutletAccess, isSuperAdmin, requireUser } from "@/lib/auth";
+import {
+  STOCK_MOVEMENT_REFERENCE,
+  STOCK_MOVEMENT_TYPE,
+} from "@/lib/constants";
 import { prisma } from "@/lib/db";
+import { createStockMovement } from "@/lib/stock-movements";
 import { saveUploadedImage } from "@/lib/uploads";
 
 export type InventoryActionResult = { error: string | null; message?: string };
@@ -180,30 +185,49 @@ export async function recordDeliveryAction(
           })),
         },
       },
+      include: {
+        lines: {
+          include: { item: { select: { unit: true, referencePrice: true } } },
+        },
+      },
     });
 
-    for (const line of lines) {
-      const item = await tx.inventoryItem.findUnique({
-        where: { id: line.itemId },
-        select: { referencePrice: true },
-      });
-      const existing = await tx.outletStock.findUnique({
-        where: { outletId_itemId: { outletId, itemId: line.itemId } },
-      });
-
+    for (const line of created.lines) {
       await tx.outletStock.upsert({
         where: { outletId_itemId: { outletId, itemId: line.itemId } },
         create: {
           outletId,
           itemId: line.itemId,
           quantity: line.quantity,
-          unitPrice: item?.referencePrice ?? 0,
+          unitPrice: line.item.referencePrice ?? 0,
           expiryDate: line.expiryDate,
         },
         update: {
-          quantity: (existing?.quantity ?? 0) + line.quantity,
+          quantity: { increment: line.quantity },
           ...(line.expiryDate ? { expiryDate: line.expiryDate } : {}),
         },
+      });
+
+      const fresh = await tx.outletStock.findUniqueOrThrow({
+        where: { outletId_itemId: { outletId, itemId: line.itemId } },
+        select: { quantity: true },
+      });
+      const quantityAfter = Math.round(fresh.quantity * 100) / 100;
+      const quantityBefore =
+        Math.round((quantityAfter - line.quantity) * 100) / 100;
+
+      await createStockMovement(tx, {
+        outletId,
+        itemId: line.itemId,
+        movementType: STOCK_MOVEMENT_TYPE.DELIVERY,
+        quantityChange: line.quantity,
+        unit: line.item.unit,
+        quantityBefore,
+        quantityAfter,
+        performedById: user.id,
+        referenceType: STOCK_MOVEMENT_REFERENCE.DELIVERY_LINE,
+        referenceId: line.id,
+        note: note || null,
       });
     }
 

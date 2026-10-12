@@ -7,6 +7,8 @@ import {
 } from "@/lib/auth";
 import { analyseStockPhoto, isAiConfigured } from "@/lib/ai";
 import {
+  STOCK_MOVEMENT_REFERENCE,
+  STOCK_MOVEMENT_TYPE,
   TRANSFER_STATUS,
   TRANSFER_STATUS_LABELS,
   type TransferStatus,
@@ -15,6 +17,7 @@ import { prisma } from "@/lib/db";
 import { formatQty } from "@/lib/format";
 import { matchDetectedItem } from "@/lib/matching";
 import { getCatalogueForOutlet } from "@/lib/stock";
+import { createStockMovement } from "@/lib/stock-movements";
 
 export type TransferLineInput = {
   itemId: string;
@@ -450,6 +453,21 @@ export async function sendTransfer(user: SessionUser, transferId: string) {
             `Cannot send ${formatQty(line.sentQty)} ${line.unit} of ${line.item.name}. Current stock is ${formatQty(fresh?.quantity ?? 0)} ${line.unit}.`,
           );
         }
+
+        const quantityAfter = round2(onHand - line.sentQty);
+        await createStockMovement(tx, {
+          outletId: transfer.fromOutletId,
+          itemId: line.itemId,
+          movementType: STOCK_MOVEMENT_TYPE.TRANSFER_OUT,
+          quantityChange: -round2(line.sentQty),
+          unit: line.unit,
+          quantityBefore: round2(onHand),
+          quantityAfter,
+          performedById: user.id,
+          referenceType: STOCK_MOVEMENT_REFERENCE.TRANSFER_LINE,
+          referenceId: line.id,
+          note: transfer.reference,
+        });
       }
 
       // Conditional status flip prevents duplicate send.
@@ -555,15 +573,17 @@ export async function receiveTransfer(
         }
 
         // Increase destination stock by received amount only.
-        if (receivedQty > 0) {
-          const existing = await tx.outletStock.findUnique({
-            where: {
-              outletId_itemId: {
-                outletId: transfer.toOutletId,
-                itemId: line.itemId,
-              },
+        const existing = await tx.outletStock.findUnique({
+          where: {
+            outletId_itemId: {
+              outletId: transfer.toOutletId,
+              itemId: line.itemId,
             },
-          });
+          },
+        });
+        const quantityBefore = round2(existing?.quantity ?? 0);
+
+        if (receivedQty > 0) {
           await tx.outletStock.upsert({
             where: {
               outletId_itemId: {
@@ -585,6 +605,24 @@ export async function receiveTransfer(
             },
           });
         }
+
+        const quantityAfter = round2(quantityBefore + receivedQty);
+        await createStockMovement(tx, {
+          outletId: transfer.toOutletId,
+          itemId: line.itemId,
+          movementType: STOCK_MOVEMENT_TYPE.TRANSFER_IN,
+          quantityChange: receivedQty,
+          unit: line.unit,
+          quantityBefore,
+          quantityAfter,
+          performedById: user.id,
+          referenceType: STOCK_MOVEMENT_REFERENCE.TRANSFER_LINE,
+          referenceId: line.id,
+          note:
+            receivedQty !== round2(line.sentQty)
+              ? `${transfer.reference} · discrepancy (sent ${formatQty(line.sentQty)})`
+              : transfer.reference,
+        });
 
         await tx.transferLine.update({
           where: { id: line.id },

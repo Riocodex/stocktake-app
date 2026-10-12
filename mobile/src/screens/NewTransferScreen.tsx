@@ -185,24 +185,56 @@ export function NewTransferScreen() {
     }
   }
 
-  function applyPhotoLines() {
+  async function confirmPhotoTransfer() {
+    if (!token) return;
+    if (!fromOutletId) {
+      Alert.alert("Choose source", "Pick which outlet is sending stock.");
+      return;
+    }
+    if (!toOutletId) {
+      Alert.alert(
+        "Choose destination",
+        "Pick which outlet should receive the stock, then confirm the photo.",
+      );
+      return;
+    }
     const selected = photoSuggestions
       .filter((row) => photoSelected[row.itemId])
       .map((row) => ({
         itemId: row.itemId,
-        quantity: String(photoQty[row.itemId] ?? row.quantity),
-        search: row.name,
+        quantity: Number(photoQty[row.itemId] ?? row.quantity),
       }))
-      .filter((line) => Number(line.quantity) > 0);
+      .filter((line) => Number.isFinite(line.quantity) && line.quantity > 0);
     if (!selected.length) {
-      Alert.alert("Nothing selected", "Select at least one matched product.");
+      Alert.alert(
+        "Nothing selected",
+        "Select at least one matched product and enter a quantity.",
+      );
       return;
     }
-    setLines(selected);
-    Alert.alert(
-      "Products added",
-      "Review quantities below, pick a destination, then save the draft.",
-    );
+
+    setPending(true);
+    try {
+      const result = await api.post<{ transfer: { id: string } }>(
+        "/api/mobile/transfers",
+        token,
+        {
+          fromOutletId,
+          toOutletId,
+          note: note || undefined,
+          imageUrl: photoUrl || undefined,
+          lines: selected,
+        },
+      );
+      navigation.replace("Transfer", { id: result.transfer.id });
+    } catch (caught) {
+      Alert.alert(
+        "Could not create",
+        caught instanceof ApiError ? caught.message : "",
+      );
+    } finally {
+      setPending(false);
+    }
   }
 
   async function save() {
@@ -282,8 +314,8 @@ export function NewTransferScreen() {
 
       <Text style={styles.label}>Photo transfer</Text>
       <Text style={styles.copy}>
-        Photograph what you are sending. AI matches source stock — you confirm
-        before saving the draft.
+        Photograph what you are sending. Confirm matches and quantities to save
+        the draft — no manual product pick needed.
       </Text>
       <View style={styles.photoActions}>
         <Pressable
@@ -348,68 +380,106 @@ export function NewTransferScreen() {
               ) : null}
             </View>
           ))}
+          {!toOutletId ? (
+            <Text style={styles.warn}>
+              Choose the destination outlet above, then confirm.
+            </Text>
+          ) : null}
           <PrimaryButton
-            label="Use selected products"
-            onPress={applyPhotoLines}
-            disabled={photoBusy}
+            label={pending ? "Saving draft…" : "Confirm photo transfer"}
+            onPress={() => void confirmPhotoTransfer()}
+            disabled={photoBusy || pending}
           />
         </View>
       ) : null}
 
       <Text style={styles.label}>Or add products manually</Text>
+      {!fromOutletId ? (
+        <Text style={styles.copy}>
+          Choose a source outlet above to load products with stock.
+        </Text>
+      ) : items.length === 0 ? (
+        <Text style={styles.copy}>
+          No products currently have stock at this outlet.
+        </Text>
+      ) : null}
 
       {lines.map((line, index) => {
         const needle = line.search.trim().toLowerCase();
-        const filtered = items
-          .filter((item) => {
-            if (!needle) return true;
-            const label = `${item.brand ?? ""} ${item.name}`.toLowerCase();
-            return label.includes(needle);
-          })
-          .slice(0, 20);
+        const matches = (
+          needle
+            ? items.filter((item) => {
+                const label =
+                  `${item.brand ?? ""} ${item.name} ${item.category}`.toLowerCase();
+                return label.includes(needle);
+              })
+            : items
+        ).slice(0, 12);
         const selected = items.find((item) => item.id === line.itemId);
+        const selectedLabel = selected
+          ? selected.brand
+            ? `${selected.brand} ${selected.name}`
+            : selected.name
+          : "";
         return (
           <View key={index} style={styles.card}>
             <Text style={styles.label}>Product</Text>
             <TextInput
-              placeholder="Search"
+              placeholder="Search the catalogue"
               placeholderTextColor={colors.muted}
-              value={line.search}
+              value={
+                selected && !line.search ? selectedLabel : line.search
+              }
               onChangeText={(search) =>
                 setLines((current) =>
                   current.map((entry, entryIndex) =>
-                    entryIndex === index ? { ...entry, search } : entry,
+                    entryIndex === index
+                      ? { ...entry, search, itemId: "" }
+                      : entry,
                   ),
                 )
               }
               style={styles.input}
+              editable={Boolean(fromOutletId)}
             />
-            {filtered.map((item) => {
-              const label = item.brand
-                ? `${item.brand} ${item.name}`
-                : item.name;
-              const active = item.id === line.itemId;
-              return (
-                <Pressable
-                  key={item.id}
-                  onPress={() =>
-                    setLines((current) =>
-                      current.map((entry, entryIndex) =>
-                        entryIndex === index
-                          ? { ...entry, itemId: item.id }
-                          : entry,
-                      ),
-                    )
-                  }
-                  style={[styles.option, active && styles.optionActive]}
-                >
-                  <Text style={styles.optionTitle}>{label}</Text>
+            {!line.itemId
+              ? matches.map((item) => {
+                  const label = item.brand
+                    ? `${item.brand} ${item.name}`
+                    : item.name;
+                  return (
+                    <Pressable
+                      key={item.id}
+                      onPress={() =>
+                        setLines((current) =>
+                          current.map((entry, entryIndex) =>
+                            entryIndex === index
+                              ? {
+                                  ...entry,
+                                  itemId: item.id,
+                                  search: "",
+                                }
+                              : entry,
+                          ),
+                        )
+                      }
+                      style={styles.option}
+                    >
+                      <Text style={styles.optionTitle}>{label}</Text>
+                      <Text style={styles.copy}>
+                        On hand {qty(item.quantity)} {item.unit}
+                      </Text>
+                    </Pressable>
+                  );
+                })
+              : (
                   <Text style={styles.copy}>
-                    On hand {qty(item.quantity)} {item.unit}
+                    On hand {qty(selected?.quantity ?? 0)} {selected?.unit}
                   </Text>
-                </Pressable>
-              );
-            })}
+                )}
+            {!line.itemId && fromOutletId && matches.length === 0 ? (
+              <Text style={styles.copy}>No matching products.</Text>
+            ) : null}
             <Text style={styles.label}>
               Quantity{selected ? ` (${selected.unit})` : ""}
             </Text>

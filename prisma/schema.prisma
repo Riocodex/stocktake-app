@@ -33,6 +33,7 @@ model Outlet {
   wastage     Wastage[]
   transfersOut Transfer[] @relation("TransferFrom")
   transfersIn  Transfer[] @relation("TransferTo")
+  stockMovements StockMovement[]
 
   @@map("outlets")
 }
@@ -56,6 +57,7 @@ model User {
   transfersCreated  Transfer[] @relation("TransferCreatedBy")
   transfersSent     Transfer[] @relation("TransferSentBy")
   transfersReceived Transfer[] @relation("TransferReceivedBy")
+  stockMovements    StockMovement[]
 
   @@index([outletId])
   @@map("users")
@@ -105,6 +107,7 @@ model InventoryItem {
   deliveries   DeliveryLine[]
   wastage      Wastage[]
   transferLines TransferLine[]
+  stockMovements StockMovement[]
 
   @@index([categoryId])
   @@index([name])
@@ -368,6 +371,39 @@ model TransferLine {
   @@unique([transferId, itemId])
   @@index([itemId])
   @@map("transfer_lines")
+}
+
+/// Append-only audit of physical inventory quantity changes (items only).
+model StockMovement {
+  id              String   @id @default(cuid())
+  outletId        String
+  itemId          String
+  /// STOCK_TAKE_ADJUSTMENT | DELIVERY | WASTAGE | TRANSFER_OUT | TRANSFER_IN | MANUAL_ADJUSTMENT
+  movementType    String
+  /// Signed delta: positive = stock in, negative = stock out.
+  quantityChange  Float
+  unit            String
+  /// Null when historical backfill cannot verify balances.
+  quantityBefore  Float?
+  quantityAfter   Float?
+  performedById   String?
+  /// STOCK_TAKE | STOCK_TAKE_LINE | DELIVERY | DELIVERY_LINE | WASTAGE | TRANSFER | TRANSFER_LINE
+  referenceType   String?
+  referenceId     String?
+  note            String?
+  createdAt       DateTime @default(now())
+
+  outlet      Outlet        @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  item        InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  performedBy User?         @relation(fields: [performedById], references: [id], onDelete: SetNull)
+
+  /// Prevents duplicate live writes / repeated backfills for the same event.
+  @@unique([referenceType, referenceId, movementType, itemId])
+  @@index([outletId, createdAt])
+  @@index([itemId, createdAt])
+  @@index([movementType, createdAt])
+  @@index([performedById])
+  @@map("stock_movements")
 }
 
 model ActivityLog {

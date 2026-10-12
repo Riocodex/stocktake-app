@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
 import { Button, cn } from "@/components/ui";
@@ -28,18 +29,19 @@ type AnalyzeResponse = {
 
 export function TransferPhotoPanel({
   fromOutletId,
+  toOutletId,
+  note,
   simulated,
-  onApply,
 }: {
   fromOutletId: string;
+  toOutletId: string;
+  note?: string;
   simulated: boolean;
-  onApply: (
-    lines: { itemId: string; quantity: string }[],
-    imageUrl: string | null,
-  ) => void;
 }) {
+  const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -111,26 +113,59 @@ export function TransferPhotoPanel({
     }
   }
 
-  function applySelected() {
+  async function confirmPhotoTransfer() {
     setError(null);
     setMessage(null);
+    if (!toOutletId) {
+      setError("Choose the destination outlet above first.");
+      return;
+    }
+
     const lines = suggestions
       .filter((row) => selected[row.itemId])
       .map((row) => ({
         itemId: row.itemId,
-        quantity: String(quantities[row.itemId] ?? row.quantity),
+        quantity: Number(quantities[row.itemId] ?? row.quantity),
       }))
-      .filter((line) => Number(line.quantity) > 0);
+      .filter((line) => Number.isFinite(line.quantity) && line.quantity > 0);
 
     if (lines.length === 0) {
-      setError("Select at least one matched product with stock.");
+      setError("Select at least one matched product with a quantity.");
       return;
     }
 
-    onApply(lines, imageUrl);
-    setMessage(
-      `Added ${lines.length} product${lines.length === 1 ? "" : "s"} from the photo. Review quantities below, then save the draft.`,
-    );
+    setConfirming(true);
+    try {
+      const response = await fetch("/api/mobile/transfers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fromOutletId,
+          toOutletId,
+          note: note || undefined,
+          imageUrl: imageUrl || undefined,
+          lines,
+        }),
+      });
+      const payload = (await response.json()) as {
+        error?: string;
+        transfer?: { id: string };
+      };
+      if (!response.ok || !payload.transfer?.id) {
+        setError(payload.error ?? "Could not create the transfer draft.");
+        return;
+      }
+      router.push(`/app/inventory/transfers/${payload.transfer.id}`);
+      router.refresh();
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Network error creating transfer.",
+      );
+    } finally {
+      setConfirming(false);
+    }
   }
 
   return (
@@ -138,8 +173,8 @@ export function TransferPhotoPanel({
       <div>
         <p className="eyebrow text-clay">Photo transfer</p>
         <p className="mt-1 text-sm text-ink-muted">
-          Photograph what you are sending. AI matches catalogue products at the
-          source outlet — you confirm lines before saving the draft.
+          Photograph what you are sending. Confirm the matched products and
+          quantities — that creates the draft. No manual product pick needed.
         </p>
       </div>
 
@@ -246,8 +281,18 @@ export function TransferPhotoPanel({
             </label>
           ))}
 
-          <Button type="button" onClick={applySelected}>
-            Use selected products
+          {!toOutletId ? (
+            <p className="text-sm font-semibold text-amber-800">
+              Choose the destination outlet above, then confirm.
+            </p>
+          ) : null}
+
+          <Button
+            type="button"
+            onClick={() => void confirmPhotoTransfer()}
+            disabled={confirming || busy}
+          >
+            {confirming ? "Saving draft…" : "Confirm photo transfer"}
           </Button>
         </div>
       ) : null}

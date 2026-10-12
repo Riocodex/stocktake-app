@@ -7,6 +7,8 @@ import {
 } from "@/lib/auth";
 import { analyseStockPhoto, isAiConfigured } from "@/lib/ai";
 import {
+  STOCK_MOVEMENT_REFERENCE,
+  STOCK_MOVEMENT_TYPE,
   WASTAGE_REASON_LABELS,
   WASTAGE_TARGET,
   isWastageReason,
@@ -16,6 +18,7 @@ import { prisma } from "@/lib/db";
 import { formatMoney, formatQty } from "@/lib/format";
 import { matchDetectedItem } from "@/lib/matching";
 import { getCatalogueForOutlet } from "@/lib/stock";
+import { createStockMovement } from "@/lib/stock-movements";
 
 export type RecordWastageInput = {
   outletId?: string | null;
@@ -177,6 +180,20 @@ export async function recordItemWastage(
       });
       const remainingQuantity =
         Math.round((remaining?.quantity ?? 0) * 100) / 100;
+
+      await createStockMovement(tx, {
+        outletId,
+        itemId,
+        movementType: STOCK_MOVEMENT_TYPE.WASTAGE,
+        quantityChange: -roundedQty,
+        unit: item.unit,
+        quantityBefore: currentQty,
+        quantityAfter: remainingQuantity,
+        performedById: user.id,
+        referenceType: STOCK_MOVEMENT_REFERENCE.WASTAGE,
+        referenceId: created.id,
+        note: note || WASTAGE_REASON_LABELS[reason],
+      });
 
       const value = Math.round(roundedQty * unitCost * 100) / 100;
       await tx.activityLog.create({

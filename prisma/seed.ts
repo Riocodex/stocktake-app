@@ -212,6 +212,7 @@ async function main() {
   console.log("Clearing existing data…");
   await prisma.activityLog.deleteMany();
   await prisma.priceHistory.deleteMany();
+  await prisma.stockMovement.deleteMany();
   await prisma.transferLine.deleteMany();
   await prisma.transfer.deleteMany();
   await prisma.wastage.deleteMany();

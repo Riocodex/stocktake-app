@@ -61,6 +61,11 @@ const NAV: NavItem[] = [
     icon: <Icon path="M7 17l-5-5 5-5M17 7l5 5-5 5M3 12h18" />,
   },
   {
+    href: "/app/inventory/history",
+    label: "History",
+    icon: <Icon path="M12 8v5l3 2M4 12a8 8 0 1 0 2.3-5.7M4 4v5h5" />,
+  },
+  {
     href: "/app/outlets",
     label: "Outlets",
     icon: <Icon path="M4 10v10h16V10M2 10l3-6h14l3 6H2Zm8 10v-6h4v6" />,
@@ -116,7 +121,8 @@ export function AppNav({ user }: { user: SessionUser }) {
               : item.href === "/app/inventory"
                 ? pathname.startsWith("/app/inventory") &&
                   !pathname.startsWith("/app/inventory/wastage") &&
-                  !pathname.startsWith("/app/inventory/transfers")
+                  !pathname.startsWith("/app/inventory/transfers") &&
+                  !pathname.startsWith("/app/inventory/history")
                 : pathname.startsWith(item.href);
 
           return (

@@ -11,7 +11,7 @@ function createClient() {
 
 // Bump this after schema fields are added so a hot-reloaded process does not
 // keep serving a PrismaClient that was built against the old shape.
-const CLIENT_GENERATION = "outlet-transfers-v2";
+const CLIENT_GENERATION = "stock-movements-v1";
 
 // Next.js hot reloading would otherwise open a new connection on every edit.
 const globalForPrisma = globalThis as unknown as {

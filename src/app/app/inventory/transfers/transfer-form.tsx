@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useMemo, useState } from "react";
 
 import {
   createTransferAction,
@@ -23,7 +23,7 @@ type CatalogItem = {
 
 export function TransferForm({
   outlets,
-  items,
+  items: initialItems,
   fixedFromOutletId,
   fixedFromOutletName,
   simulatedAi = false,
@@ -39,27 +39,82 @@ export function TransferForm({
     INITIAL,
   );
   const [fromOutletId, setFromOutletId] = useState(fixedFromOutletId ?? "");
+  const [toOutletId, setToOutletId] = useState("");
+  const [note, setNote] = useState("");
   const [lines, setLines] = useState<Line[]>([
     { key: "1", itemId: "", quantity: "" },
   ]);
-  const [imageUrl, setImageUrl] = useState("");
+  const [items, setItems] = useState<CatalogItem[]>(initialItems);
+  const [loadingItems, setLoadingItems] = useState(false);
 
   const effectiveFrom = fixedFromOutletId || fromOutletId;
 
-  const grouped = items.reduce<Record<string, CatalogItem[]>>(
-    (accumulator, item) => {
-      (accumulator[item.category] ??= []).push(item);
-      return accumulator;
-    },
-    {},
+  useEffect(() => {
+    setFromOutletId(fixedFromOutletId ?? "");
+  }, [fixedFromOutletId]);
+
+  useEffect(() => {
+    if (!effectiveFrom) {
+      setItems([]);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingItems(true);
+    fetch(`/api/mobile/inventory?outlet=${encodeURIComponent(effectiveFrom)}`)
+      .then(async (response) => {
+        const payload = (await response.json()) as {
+          items?: {
+            id: string;
+            name: string;
+            brand: string | null;
+            unit: string;
+            category: string;
+            quantity: number;
+          }[];
+          error?: string;
+        };
+        if (!response.ok) {
+          throw new Error(payload.error ?? "Could not load stock.");
+        }
+        if (cancelled) return;
+        setItems(
+          (payload.items ?? [])
+            .filter((item) => item.quantity > 0)
+            .map((item) => ({
+              id: item.id,
+              name: item.brand ? `${item.brand} ${item.name}` : item.name,
+              unit: item.unit,
+              category: item.category,
+              quantity: item.quantity,
+            })),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setItems([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingItems(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveFrom]);
+
+  const grouped = useMemo(
+    () =>
+      items.reduce<Record<string, CatalogItem[]>>((accumulator, item) => {
+        (accumulator[item.category] ??= []).push(item);
+        return accumulator;
+      }, {}),
+    [items],
   );
 
   const destinations = outlets.filter((outlet) => outlet.id !== effectiveFrom);
 
   return (
     <form action={formAction} className="space-y-5">
-      {imageUrl ? <input type="hidden" name="imageUrl" value={imageUrl} /> : null}
-
       {fixedFromOutletId ? (
         <>
           <input type="hidden" name="fromOutletId" value={fixedFromOutletId} />
@@ -83,7 +138,11 @@ export function TransferForm({
             name="fromOutletId"
             required
             value={fromOutletId}
-            onChange={(event) => setFromOutletId(event.target.value)}
+            onChange={(event) => {
+              setFromOutletId(event.target.value);
+              setToOutletId("");
+              setLines([{ key: "1", itemId: "", quantity: "" }]);
+            }}
             className="w-full rounded-2xl border border-ink/15 bg-white px-4 py-3 text-sm outline-none focus:border-clay"
           >
             <option value="" disabled>
@@ -109,7 +168,8 @@ export function TransferForm({
           id="toOutletId"
           name="toOutletId"
           required
-          defaultValue=""
+          value={toOutletId}
+          onChange={(event) => setToOutletId(event.target.value)}
           className="w-full rounded-2xl border border-ink/15 bg-white px-4 py-3 text-sm outline-none focus:border-clay"
         >
           <option value="" disabled>
@@ -126,22 +186,26 @@ export function TransferForm({
       {effectiveFrom ? (
         <TransferPhotoPanel
           fromOutletId={effectiveFrom}
+          toOutletId={toOutletId}
+          note={note}
           simulated={simulatedAi}
-          onApply={(photoLines, photoUrl) => {
-            setLines(
-              photoLines.map((line, index) => ({
-                key: `photo-${index}-${line.itemId}`,
-                itemId: line.itemId,
-                quantity: line.quantity,
-              })),
-            );
-            setImageUrl(photoUrl ?? "");
-          }}
         />
       ) : null}
 
       <div className="space-y-3">
-        <p className="eyebrow text-ink-muted">Products to send</p>
+        <p className="eyebrow text-ink-muted">Or add products manually</p>
+        {!effectiveFrom ? (
+          <p className="text-sm text-ink-muted">
+            Choose a source outlet to load products with stock.
+          </p>
+        ) : loadingItems ? (
+          <p className="text-sm text-ink-muted">Loading products…</p>
+        ) : items.length === 0 ? (
+          <p className="text-sm text-ink-muted">
+            No products currently have stock at this outlet.
+          </p>
+        ) : null}
+
         {lines.map((line, index) => {
           const selected = items.find((item) => item.id === line.itemId);
           return (
@@ -157,7 +221,6 @@ export function TransferForm({
                 ) : null}
                 <select
                   name="itemId"
-                  required
                   value={line.itemId}
                   onChange={(event) =>
                     setLines((current) =>
@@ -169,6 +232,7 @@ export function TransferForm({
                     )
                   }
                   className="w-full rounded-xl border border-ink/15 bg-white px-3 py-2 text-sm outline-none focus:border-clay"
+                  disabled={!effectiveFrom || loadingItems}
                 >
                   <option value="">Choose…</option>
                   {Object.entries(grouped).map(([category, categoryItems]) => (
@@ -193,7 +257,6 @@ export function TransferForm({
                   type="number"
                   min="0.01"
                   step="any"
-                  required
                   value={line.quantity}
                   onChange={(event) =>
                     setLines((current) =>
@@ -247,6 +310,8 @@ export function TransferForm({
           id="note"
           name="note"
           rows={2}
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
           className="w-full rounded-2xl border border-ink/15 bg-white px-4 py-3 text-sm outline-none focus:border-clay"
           placeholder="e.g. Balluta running low on soft drinks"
         />
@@ -261,8 +326,17 @@ export function TransferForm({
         </p>
       ) : null}
 
-      <Button type="submit" size="lg" disabled={pending}>
-        {pending ? "Creating…" : "Save draft transfer"}
+      <Button
+        type="submit"
+        size="lg"
+        disabled={
+          pending ||
+          !effectiveFrom ||
+          !toOutletId ||
+          !lines.some((line) => line.itemId && Number(line.quantity) > 0)
+        }
+      >
+        {pending ? "Creating…" : "Save manual draft"}
       </Button>
     </form>
   );

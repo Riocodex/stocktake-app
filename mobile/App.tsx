@@ -26,6 +26,7 @@ import { RecordWastageScreen } from "./src/screens/RecordWastageScreen";
 import { TransfersScreen } from "./src/screens/TransfersScreen";
 import { NewTransferScreen } from "./src/screens/NewTransferScreen";
 import { TransferDetailScreen } from "./src/screens/TransferDetailScreen";
+import { StockHistoryScreen } from "./src/screens/StockHistoryScreen";
 import { colors } from "./src/theme";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -159,6 +160,11 @@ function Root() {
               name="Transfer"
               component={TransferDetailScreen}
               options={{ title: "Transfer" }}
+            />
+            <Stack.Screen
+              name="StockHistory"
+              component={StockHistoryScreen}
+              options={{ title: "Movement history" }}
             />
             <Stack.Screen
               name="Outlets"

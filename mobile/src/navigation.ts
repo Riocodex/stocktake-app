@@ -11,6 +11,7 @@ export type RootStackParamList = {
   Transfers: undefined;
   NewTransfer: undefined;
   Transfer: { id: string };
+  StockHistory: undefined;
   Outlets: undefined;
   Team: undefined;
 };
