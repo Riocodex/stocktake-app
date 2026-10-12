@@ -160,6 +160,12 @@ export function HomeScreen() {
       >
         <Text style={styles.secondaryText}>Record a delivery</Text>
       </Pressable>
+      <Pressable
+        style={styles.secondary}
+        onPress={() => navigation.navigate("Wastage")}
+      >
+        <Text style={styles.secondaryText}>Record wastage</Text>
+      </Pressable>
 
       {data?.comparison && data.comparison.length > 0 ? (
         <View style={styles.card}>

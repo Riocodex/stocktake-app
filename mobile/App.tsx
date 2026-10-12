@@ -21,6 +21,8 @@ import { ProductScreen } from "./src/screens/ProductScreen";
 import { TakeScreen } from "./src/screens/TakeScreen";
 import { TakesScreen } from "./src/screens/TakesScreen";
 import { TeamScreen } from "./src/screens/TeamScreen";
+import { WastageScreen } from "./src/screens/WastageScreen";
+import { RecordWastageScreen } from "./src/screens/RecordWastageScreen";
 import { colors } from "./src/theme";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -129,6 +131,16 @@ function Root() {
               name="Delivery"
               component={DeliveryScreen}
               options={{ title: "Delivery" }}
+            />
+            <Stack.Screen
+              name="Wastage"
+              component={WastageScreen}
+              options={{ title: "Wastage" }}
+            />
+            <Stack.Screen
+              name="RecordWastage"
+              component={RecordWastageScreen}
+              options={{ title: "Record wastage" }}
             />
             <Stack.Screen
               name="Outlets"

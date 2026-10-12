@@ -84,6 +84,9 @@ export function InventoryScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>Inventory</Text>
         <View style={styles.headerActions}>
+          <Pressable onPress={() => navigation.navigate("Wastage")}>
+            <Text style={styles.link}>Wastage</Text>
+          </Pressable>
           <Pressable onPress={() => navigation.navigate("Delivery")}>
             <Text style={styles.link}>Delivery</Text>
           </Pressable>

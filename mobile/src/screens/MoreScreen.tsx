@@ -25,6 +25,15 @@ export function MoreScreen() {
         {user?.outletName ?? "All outlets"}
       </Text>
 
+      <Pressable style={styles.row} onPress={() => navigation.navigate("Wastage")}>
+        <Text style={styles.rowTitle}>Wastage</Text>
+        <Text style={styles.copy}>Record spoiled, expired or damaged stock</Text>
+      </Pressable>
+      <Pressable style={styles.row} onPress={() => navigation.navigate("Delivery")}>
+        <Text style={styles.rowTitle}>Delivery</Text>
+        <Text style={styles.copy}>Add supplier stock without a full count</Text>
+      </Pressable>
+
       {isSuper ? (
         <>
           <Pressable style={styles.row} onPress={() => navigation.navigate("Outlets")}>

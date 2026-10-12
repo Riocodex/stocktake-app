@@ -179,6 +179,16 @@ export default async function InventoryPage({
           <ButtonLink href="/app/inventory/delivery" variant="secondary">
             Record delivery
           </ButtonLink>
+          <ButtonLink
+            href={
+              scope.outletId
+                ? `/app/inventory/wastage?outlet=${scope.outletId}`
+                : "/app/inventory/wastage"
+            }
+            variant="secondary"
+          >
+            Wastage
+          </ButtonLink>
           <ButtonLink href="/app/inventory/new">Add product</ButtonLink>
         </div>
       </header>

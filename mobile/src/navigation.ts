@@ -6,6 +6,8 @@ export type RootStackParamList = {
   Product: { id: string };
   NewProduct: undefined;
   Delivery: undefined;
+  Wastage: undefined;
+  RecordWastage: undefined;
   Outlets: undefined;
   Team: undefined;
 };
