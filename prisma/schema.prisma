@@ -31,6 +31,8 @@ model Outlet {
   prices      PriceHistory[]
   deliveries  Delivery[]
   wastage     Wastage[]
+  transfersOut Transfer[] @relation("TransferFrom")
+  transfersIn  Transfer[] @relation("TransferTo")
 
   @@map("outlets")
 }
@@ -51,6 +53,9 @@ model User {
   stockTakes StockTake[]
   deliveries Delivery[]
   wastage    Wastage[]
+  transfersCreated  Transfer[] @relation("TransferCreatedBy")
+  transfersSent     Transfer[] @relation("TransferSentBy")
+  transfersReceived Transfer[] @relation("TransferReceivedBy")
 
   @@index([outletId])
   @@map("users")
@@ -99,6 +104,7 @@ model InventoryItem {
   priceHistory PriceHistory[]
   deliveries   DeliveryLine[]
   wastage      Wastage[]
+  transferLines TransferLine[]
 
   @@index([categoryId])
   @@index([name])
@@ -308,6 +314,60 @@ model Wastage {
   @@index([itemId, createdAt])
   @@index([reason])
   @@map("wastage")
+}
+
+/// Outlet-to-outlet stock transfer. Stock moves only on SENT / RECEIVED.
+model Transfer {
+  id            String    @id @default(cuid())
+  reference     String    @unique
+  fromOutletId  String
+  toOutletId    String
+  /// DRAFT | SENT | RECEIVED | CANCELLED
+  status        String    @default("DRAFT")
+  note          String?
+  /// Optional photo used when drafting (AI-assisted create).
+  imageUrl      String?
+  createdById   String
+  sentById      String?
+  receivedById  String?
+  createdAt     DateTime  @default(now())
+  sentAt        DateTime?
+  receivedAt    DateTime?
+  cancelledAt   DateTime?
+
+  fromOutlet  Outlet @relation("TransferFrom", fields: [fromOutletId], references: [id], onDelete: Cascade)
+  toOutlet    Outlet @relation("TransferTo", fields: [toOutletId], references: [id], onDelete: Cascade)
+  createdBy   User   @relation("TransferCreatedBy", fields: [createdById], references: [id])
+  sentBy      User?  @relation("TransferSentBy", fields: [sentById], references: [id])
+  receivedBy  User?  @relation("TransferReceivedBy", fields: [receivedById], references: [id])
+  lines       TransferLine[]
+
+  @@index([fromOutletId, status, createdAt])
+  @@index([toOutletId, status, createdAt])
+  @@index([status, createdAt])
+  @@map("transfers")
+}
+
+model TransferLine {
+  id               String  @id @default(cuid())
+  transferId       String
+  itemId           String
+  /// Catalogue unit snapshotted at create/send time.
+  unit             String
+  /// Quantity leaving the source (set at draft, locked at send).
+  sentQty          Float
+  /// Quantity confirmed at destination; null until RECEIVED.
+  receivedQty      Float?
+  /// Required when receivedQty differs from sentQty.
+  discrepancyNote  String?
+  createdAt        DateTime @default(now())
+
+  transfer Transfer     @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  item     InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([transferId, itemId])
+  @@index([itemId])
+  @@map("transfer_lines")
 }
 
 model ActivityLog {

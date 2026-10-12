@@ -29,6 +29,13 @@ export function MoreScreen() {
         <Text style={styles.rowTitle}>Wastage</Text>
         <Text style={styles.copy}>Record spoiled, expired or damaged stock</Text>
       </Pressable>
+      <Pressable
+        style={styles.row}
+        onPress={() => navigation.navigate("Transfers")}
+      >
+        <Text style={styles.rowTitle}>Transfers</Text>
+        <Text style={styles.copy}>Move stock between outlets</Text>
+      </Pressable>
       <Pressable style={styles.row} onPress={() => navigation.navigate("Delivery")}>
         <Text style={styles.rowTitle}>Delivery</Text>
         <Text style={styles.copy}>Add supplier stock without a full count</Text>

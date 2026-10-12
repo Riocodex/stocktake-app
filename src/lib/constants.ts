@@ -126,3 +126,24 @@ export const WASTAGE_REASON_LABELS: Record<WastageReason, string> = {
 export function isWastageReason(value: string): value is WastageReason {
   return Object.values(WASTAGE_REASONS).includes(value as WastageReason);
 }
+
+export const TRANSFER_STATUS = {
+  DRAFT: "DRAFT",
+  SENT: "SENT",
+  RECEIVED: "RECEIVED",
+  CANCELLED: "CANCELLED",
+} as const;
+
+export type TransferStatus =
+  (typeof TRANSFER_STATUS)[keyof typeof TRANSFER_STATUS];
+
+export const TRANSFER_STATUS_LABELS: Record<TransferStatus, string> = {
+  DRAFT: "Draft",
+  SENT: "Sent",
+  RECEIVED: "Received",
+  CANCELLED: "Cancelled",
+};
+
+export function isTransferStatus(value: string): value is TransferStatus {
+  return Object.values(TRANSFER_STATUS).includes(value as TransferStatus);
+}

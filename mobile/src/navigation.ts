@@ -8,6 +8,9 @@ export type RootStackParamList = {
   Delivery: undefined;
   Wastage: undefined;
   RecordWastage: undefined;
+  Transfers: undefined;
+  NewTransfer: undefined;
+  Transfer: { id: string };
   Outlets: undefined;
   Team: undefined;
 };

@@ -166,6 +166,12 @@ export function HomeScreen() {
       >
         <Text style={styles.secondaryText}>Record wastage</Text>
       </Pressable>
+      <Pressable
+        style={styles.secondary}
+        onPress={() => navigation.navigate("Transfers")}
+      >
+        <Text style={styles.secondaryText}>Transfers</Text>
+      </Pressable>
 
       {data?.comparison && data.comparison.length > 0 ? (
         <View style={styles.card}>

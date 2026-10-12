@@ -23,6 +23,9 @@ import { TakesScreen } from "./src/screens/TakesScreen";
 import { TeamScreen } from "./src/screens/TeamScreen";
 import { WastageScreen } from "./src/screens/WastageScreen";
 import { RecordWastageScreen } from "./src/screens/RecordWastageScreen";
+import { TransfersScreen } from "./src/screens/TransfersScreen";
+import { NewTransferScreen } from "./src/screens/NewTransferScreen";
+import { TransferDetailScreen } from "./src/screens/TransferDetailScreen";
 import { colors } from "./src/theme";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -141,6 +144,21 @@ function Root() {
               name="RecordWastage"
               component={RecordWastageScreen}
               options={{ title: "Record wastage" }}
+            />
+            <Stack.Screen
+              name="Transfers"
+              component={TransfersScreen}
+              options={{ title: "Transfers" }}
+            />
+            <Stack.Screen
+              name="NewTransfer"
+              component={NewTransferScreen}
+              options={{ title: "New transfer" }}
+            />
+            <Stack.Screen
+              name="Transfer"
+              component={TransferDetailScreen}
+              options={{ title: "Transfer" }}
             />
             <Stack.Screen
               name="Outlets"
