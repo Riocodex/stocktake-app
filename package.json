@@ -20,7 +20,10 @@
     "test:alerts": "tsx scripts/test-cost-alerts.ts",
     "test:availability": "tsx scripts/test-dish-availability.ts",
     "test:dish-wastage": "tsx scripts/test-dish-wastage.ts",
-    "test:ordering": "tsx scripts/test-ordering.ts"
+    "test:ordering": "tsx scripts/test-ordering.ts",
+    "test:invoice-ai": "tsx scripts/test-invoice-ai.ts",
+    "test:invoice-receiving": "tsx scripts/test-invoice-receiving.ts",
+    "typecheck": "tsc --noEmit"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

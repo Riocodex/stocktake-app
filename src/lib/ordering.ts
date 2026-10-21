@@ -87,6 +87,8 @@ function resolveCanOpen(args: {
   requiresApproval: boolean;
   approvalStatus: OrderApprovalStatus | null;
   externalUrl: string | null;
+  /** SUPER_ADMIN is the office — skip the approval gate. */
+  bypassApproval?: boolean;
 }): { canOpen: boolean; reason: string | null } {
   if (!isExternalOrderingMethod(args.method)) {
     return {
@@ -97,7 +99,7 @@ function resolveCanOpen(args: {
   if (!args.externalUrl) {
     return { canOpen: false, reason: "No ordering URL is configured." };
   }
-  if (!args.requiresApproval) {
+  if (!args.requiresApproval || args.bypassApproval) {
     return { canOpen: true, reason: null };
   }
   if (args.approvalStatus === ORDER_APPROVAL_STATUS.APPROVED) {
@@ -187,6 +189,7 @@ export async function listOrderingCardsForHub(
         requiresApproval: card.requiresApproval,
         approvalStatus,
         externalUrl: card.externalUrl,
+        bypassApproval: isSuper(user),
       });
 
       return {
@@ -271,7 +274,8 @@ export async function authorizeExternalOpen(
     throw new OrderingError(400, urlCheck.ok ? "No URL configured." : urlCheck.error);
   }
 
-  if (card.requiresApproval) {
+  // SUPER_ADMIN is the office — they may open without a prior approval request.
+  if (card.requiresApproval && !isSuper(user)) {
     const latest = await prisma.orderApprovalRequest.findFirst({
       where: { cardId: card.id, outletId: targetOutlet },
       orderBy: { createdAt: "desc" },

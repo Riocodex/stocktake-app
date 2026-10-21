@@ -4,12 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { assertOutletAccess, isSuperAdmin, requireUser } from "@/lib/auth";
-import {
-  STOCK_MOVEMENT_REFERENCE,
-  STOCK_MOVEMENT_TYPE,
-} from "@/lib/constants";
 import { prisma } from "@/lib/db";
-import { createStockMovement } from "@/lib/stock-movements";
+import { createDeliveryReceiving } from "@/lib/deliveries";
 import { saveUploadedImage } from "@/lib/uploads";
 
 export type InventoryActionResult = { error: string | null; message?: string };
@@ -196,82 +192,20 @@ export async function recordDeliveryAction(
     return { error: "Add at least one product from the delivery." };
   }
 
-  const delivery = await prisma.$transaction(async (tx) => {
-    const created = await tx.delivery.create({
-      data: {
-        outletId,
-        userId: user.id,
-        supplierId,
-        reference: reference || null,
-        note: note || null,
-        lines: {
-          create: lines.map((line) => ({
-            itemId: line.itemId,
-            quantity: line.quantity,
-            unitPrice: line.unitPrice,
-            expiryDate: line.expiryDate,
-          })),
-        },
-      },
-      include: {
-        lines: {
-          include: { item: { select: { unit: true, referencePrice: true } } },
-        },
-      },
-    });
-
-    for (const line of created.lines) {
-      // OutletStock.unitPrice stays on group referencePrice for costing.
-      // DeliveryLine.unitPrice is purchase history only — never overwrites
-      // InventoryItem.referencePrice.
-      await tx.outletStock.upsert({
-        where: { outletId_itemId: { outletId, itemId: line.itemId } },
-        create: {
-          outletId,
-          itemId: line.itemId,
-          quantity: line.quantity,
-          unitPrice: line.item.referencePrice ?? 0,
-          expiryDate: line.expiryDate,
-        },
-        update: {
-          quantity: { increment: line.quantity },
-          ...(line.expiryDate ? { expiryDate: line.expiryDate } : {}),
-        },
-      });
-
-      const fresh = await tx.outletStock.findUniqueOrThrow({
-        where: { outletId_itemId: { outletId, itemId: line.itemId } },
-        select: { quantity: true },
-      });
-      const quantityAfter = Math.round(fresh.quantity * 100) / 100;
-      const quantityBefore =
-        Math.round((quantityAfter - line.quantity) * 100) / 100;
-
-      await createStockMovement(tx, {
-        outletId,
+  await prisma.$transaction(async (tx) => {
+    await createDeliveryReceiving(tx, {
+      outletId,
+      userId: user.id,
+      supplierId,
+      reference: reference || null,
+      note: note || null,
+      lines: lines.map((line) => ({
         itemId: line.itemId,
-        movementType: STOCK_MOVEMENT_TYPE.DELIVERY,
-        quantityChange: line.quantity,
-        unit: line.item.unit,
-        quantityBefore,
-        quantityAfter,
-        performedById: user.id,
-        referenceType: STOCK_MOVEMENT_REFERENCE.DELIVERY_LINE,
-        referenceId: line.id,
-        note: note || null,
-      });
-    }
-
-    await tx.activityLog.create({
-      data: {
-        userId: user.id,
-        outletId,
-        action: "DELIVERY_RECORDED",
-        detail: `${lines.length} line${lines.length === 1 ? "" : "s"} received`,
-      },
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+        expiryDate: line.expiryDate,
+      })),
     });
-
-    return created;
   });
 
   revalidatePath("/app/inventory");

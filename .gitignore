@@ -18,6 +18,10 @@ build
 /public/uploads/*
 !/public/uploads/.gitkeep
 
+# Private invoice documents (served via authenticated API only)
+/storage/invoices/*
+!/storage/invoices/.gitkeep
+
 # Misc
 .DS_Store
 *.tsbuildinfo

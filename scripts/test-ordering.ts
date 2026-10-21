@@ -226,20 +226,34 @@ async function main() {
   );
   pass("link open does not claim order submitted");
 
+  // Clear any prior approval state for beverages / outlet A.
+  await prisma.orderApprovalRequest.deleteMany({
+    where: {
+      cardId: beverages.id,
+      outletId: outletA.id,
+    },
+  });
+
+  const superOpenGated = await authorizeExternalOpen(
+    superActor,
+    beverages.id,
+    outletA.id,
+  );
+  assert.equal(superOpenGated.url, DEMO_ORDERING_WHATSAPP_URL);
+  pass("SUPER_ADMIN opens approval-gated card without request");
+
+  const superHub = await listOrderingCardsForHub(superActor, {
+    outletId: outletA.id,
+  });
+  const beveragesHub = superHub.find((c) => c.id === beverages.id);
+  assert.ok(beveragesHub?.canOpenExternal);
+  pass("SUPER_ADMIN hub shows approval-gated card as openable");
+
   await expectReject(
     "unapproved cannot open approval-gated card",
     () => authorizeExternalOpen(oaActor, beverages.id, outletA.id),
     403,
   );
-
-  // Clear prior pending for beverages/outletA
-  await prisma.orderApprovalRequest.deleteMany({
-    where: {
-      cardId: beverages.id,
-      outletId: outletA.id,
-      status: ORDER_APPROVAL_STATUS.PENDING,
-    },
-  });
 
   const pending = await requestOrderApproval(oaActor, {
     cardId: beverages.id,

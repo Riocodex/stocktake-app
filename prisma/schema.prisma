@@ -36,6 +36,7 @@ model Outlet {
   stockMovements StockMovement[]
   orderingCardOutlets OrderingCardOutlet[]
   orderApprovals OrderApprovalRequest[]
+  invoices Invoice[]
 
   @@map("outlets")
 }
@@ -62,6 +63,8 @@ model User {
   stockMovements    StockMovement[]
   orderApprovalsRequested OrderApprovalRequest[] @relation("OrderApprovalRequester")
   orderApprovalsReviewed  OrderApprovalRequest[] @relation("OrderApprovalReviewer")
+  invoicesUploaded Invoice[] @relation("InvoiceUploadedBy")
+  invoicesReviewed Invoice[] @relation("InvoiceReviewedBy")
 
   @@index([outletId])
   @@map("users")
@@ -113,6 +116,7 @@ model InventoryItem {
   transferLines TransferLine[]
   stockMovements StockMovement[]
   recipeLines  DishIngredient[]
+  invoiceLines InvoiceLine[]
 
   @@index([categoryId])
   @@index([name])
@@ -269,34 +273,44 @@ model Delivery {
   userId     String
   /// Optional link to Purchasing supplier directory (does not affect costing).
   supplierId String?
+  /// Optional link to a reviewed invoice (Step 13 receiving).
+  invoiceId  String?
   /// Optional delivery note / invoice reference from the supplier.
   reference  String?
   note       String?
+  /// True when this delivery was linked to an invoice without adding stock again.
+  linkedWithoutStock Boolean @default(false)
   createdAt  DateTime @default(now())
 
   outlet   Outlet         @relation(fields: [outletId], references: [id], onDelete: Cascade)
   user     User           @relation(fields: [userId], references: [id])
   supplier Supplier?      @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  invoice  Invoice?       @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
   lines    DeliveryLine[]
 
   @@index([outletId, createdAt])
   @@index([supplierId])
+  @@index([invoiceId])
   @@map("deliveries")
 }
 
 model DeliveryLine {
-  id         String    @id @default(cuid())
-  deliveryId String
-  itemId     String
-  quantity   Float
-  unitPrice  Float?
-  expiryDate DateTime?
-  createdAt  DateTime  @default(now())
+  id            String    @id @default(cuid())
+  deliveryId    String
+  itemId        String
+  quantity      Float
+  unitPrice     Float?
+  expiryDate    DateTime?
+  /// Invoice line this quantity was received against (partial receives allowed).
+  invoiceLineId String?
+  createdAt     DateTime  @default(now())
 
-  delivery Delivery      @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
-  item     InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  delivery    Delivery     @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  item        InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  invoiceLine InvoiceLine? @relation(fields: [invoiceLineId], references: [id], onDelete: SetNull)
 
   @@index([itemId])
+  @@index([invoiceLineId])
   @@map("delivery_lines")
 }
 
@@ -508,10 +522,93 @@ model Supplier {
 
   cards      OrderingCard[]
   deliveries Delivery[]
+  invoices   Invoice[]
 
   @@index([name])
   @@index([isActive])
   @@map("suppliers")
+}
+
+/// Captured supplier invoice (document review only — does not change stock).
+model Invoice {
+  id                   String    @id @default(cuid())
+  outletId             String
+  supplierId           String?
+  /// Raw supplier name as read from the document.
+  supplierTextRaw      String?
+  supplierVatRaw       String?
+  invoiceNumber        String?
+  invoiceDate          DateTime?
+  deliveryDate         DateTime?
+  currency             String    @default("EUR")
+  subtotal             Float?
+  vatAmount            Float?
+  total                Float?
+  /// Snapshot of AI-extracted monetary fields (audit).
+  extractedSubtotal    Float?
+  extractedVatAmount   Float?
+  extractedTotal       Float?
+  /// UPLOADED | EXTRACTED | NEEDS_REVIEW | CONFIRMED | FAILED
+  status               String    @default("UPLOADED")
+  fileKey              String
+  fileMimeType         String
+  fileName             String?
+  extractionProvider   String?
+  extractionRaw        String?
+  extractionError      String?
+  uploadedById         String
+  reviewedById         String?
+  confirmedAt          DateTime?
+  /// NOT_RECEIVED | PARTIALLY_RECEIVED | FULLY_RECEIVED (separate from document status).
+  receivingStatus      String    @default("NOT_RECEIVED")
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  outlet     Outlet        @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  supplier   Supplier?     @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  uploadedBy User          @relation("InvoiceUploadedBy", fields: [uploadedById], references: [id])
+  reviewedBy User?         @relation("InvoiceReviewedBy", fields: [reviewedById], references: [id])
+  lines      InvoiceLine[]
+  deliveries Delivery[]
+
+  @@index([outletId, status, createdAt])
+  @@index([outletId, invoiceNumber, invoiceDate])
+  @@index([outletId, receivingStatus])
+  @@index([supplierId])
+  @@index([uploadedById])
+  @@map("invoices")
+}
+
+model InvoiceLine {
+  id               String  @id @default(cuid())
+  invoiceId        String
+  rawDescription   String
+  itemId           String?
+  quantity         Float?
+  unit             String?
+  unitPrice        Float?
+  lineTotal        Float?
+  vatRate          Float?
+  vatAmount        Float?
+  /// UNMATCHED | SUGGESTED | MATCHED | SKIPPED
+  matchStatus      String  @default("UNMATCHED")
+  matchConfidence  Float?
+  needsReview      Boolean @default(false)
+  /// Exclude non-stock charges (delivery fees, etc.) from receiving.
+  excludeFromReceiving Boolean @default(false)
+  /// Cumulative quantity received into OutletStock, in the item's stock unit.
+  quantityReceived Float   @default(0)
+  sortOrder        Int     @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  invoice       Invoice        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  item          InventoryItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  deliveryLines DeliveryLine[]
+
+  @@index([invoiceId, sortOrder])
+  @@index([itemId])
+  @@map("invoice_lines")
 }
 
 /// Large-card ordering option shown in Purchasing & Orders.

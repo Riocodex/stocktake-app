@@ -11,17 +11,23 @@ function createClient() {
 
 // Bump this after schema fields/models are added so a hot-reloaded process does
 // not keep serving a PrismaClient that was built against the old shape.
-const CLIENT_GENERATION = "purchasing-ordering-v2";
+const CLIENT_GENERATION = "invoice-receiving-v3-onestep";
 
 function clientHasPurchasingModels(
   client: ReturnType<typeof createClient> | undefined,
 ): client is ReturnType<typeof createClient> {
   // Webpack HMR can keep a PrismaClient whose generation string matches but
-  // whose delegates predate `prisma generate` (e.g. missing `supplier`).
+  // whose delegates predate `prisma generate`.
   const supplier = (
     client as { supplier?: { findFirst?: unknown } } | undefined
   )?.supplier;
-  return typeof supplier?.findFirst === "function";
+  const invoice = (
+    client as { invoice?: { findFirst?: unknown } } | undefined
+  )?.invoice;
+  return (
+    typeof supplier?.findFirst === "function" &&
+    typeof invoice?.findFirst === "function"
+  );
 }
 
 // Next.js hot reloading would otherwise open a new connection on every edit.

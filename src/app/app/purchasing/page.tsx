@@ -67,6 +67,9 @@ export default async function PurchasingHubPage({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <ButtonLink href="/app/purchasing/invoices" variant="secondary">
+            Invoices
+          </ButtonLink>
           <ButtonLink href="/app/inventory/delivery" variant="secondary">
             Record delivery
           </ButtonLink>
@@ -136,19 +139,15 @@ export default async function PurchasingHubPage({
 
             {card.requiresApproval ? (
               <div className="rounded-xl bg-cream/70 px-3 py-2 text-xs text-ink-muted">
-                Office approval required
-                {card.approval ? (
-                  <>
-                    {" · "}
-                    {
-                      ORDER_APPROVAL_STATUS_LABELS[
-                        card.approval.status as OrderApprovalStatus
-                      ]
-                    }
-                  </>
-                ) : (
-                  " · Not requested yet"
-                )}
+                {superAdmin
+                  ? "Office approval required for outlets — you can open directly"
+                  : card.approval
+                    ? `Office approval required · ${
+                        ORDER_APPROVAL_STATUS_LABELS[
+                          card.approval.status as OrderApprovalStatus
+                        ]
+                      }`
+                    : "Office approval required · Not requested yet"}
               </div>
             ) : null}
 
@@ -166,9 +165,9 @@ export default async function PurchasingHubPage({
                 disabled={!card.canOpenExternal}
                 blockedReason={card.openBlockedReason}
               />
-              {card.requiresApproval &&
-              (!card.approval ||
-                card.approval.status === "REJECTED") ? (
+              {!superAdmin &&
+              card.requiresApproval &&
+              (!card.approval || card.approval.status === "REJECTED") ? (
                 <RequestApprovalForm
                   cardId={card.id}
                   outletId={selectedOutlet}

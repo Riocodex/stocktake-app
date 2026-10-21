@@ -59,7 +59,18 @@ const CONTAINER_UNITS = new Set([
 ]);
 
 /** Discrete counting units treated as interchangeable "each" for pack bridging. */
-const EACH_UNITS = new Set(["unit", "piece", "each", "slice"]);
+const EACH_UNITS = new Set([
+  "unit",
+  "piece",
+  "each",
+  "slice",
+  // Common stocked sellable units for supplier pack → stock conversion.
+  "bottle",
+  "can",
+  "jar",
+  "glass",
+  "cup",
+]);
 
 function normalizeUnit(raw: string): string {
   return String(raw ?? "")

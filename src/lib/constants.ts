@@ -298,3 +298,70 @@ export const ORDER_APPROVAL_STATUS_LABELS: Record<OrderApprovalStatus, string> =
 export const DEMO_ORDERING_WHATSAPP_URL =
   "https://chat.whatsapp.com/F2YOng3M5M54afoHLR3Hyh";
 export const DEMO_ORDERING_WEBSITE_URL = "https://tribemalta.com/mt/shop";
+
+/** Invoice document lifecycle (capture & review only — never updates stock). */
+export const INVOICE_STATUS = {
+  UPLOADED: "UPLOADED",
+  EXTRACTED: "EXTRACTED",
+  NEEDS_REVIEW: "NEEDS_REVIEW",
+  CONFIRMED: "CONFIRMED",
+  FAILED: "FAILED",
+} as const;
+
+export type InvoiceStatus =
+  (typeof INVOICE_STATUS)[keyof typeof INVOICE_STATUS];
+
+export const INVOICE_STATUS_LABELS: Record<InvoiceStatus, string> = {
+  UPLOADED: "Uploaded",
+  EXTRACTED: "Extracted",
+  NEEDS_REVIEW: "Needs review",
+  CONFIRMED: "Confirmed",
+  FAILED: "Failed",
+};
+
+export function isInvoiceStatus(value: string): value is InvoiceStatus {
+  return Object.values(INVOICE_STATUS).includes(value as InvoiceStatus);
+}
+
+export const INVOICE_LINE_MATCH = {
+  UNMATCHED: "UNMATCHED",
+  SUGGESTED: "SUGGESTED",
+  MATCHED: "MATCHED",
+  SKIPPED: "SKIPPED",
+} as const;
+
+export type InvoiceLineMatchStatus =
+  (typeof INVOICE_LINE_MATCH)[keyof typeof INVOICE_LINE_MATCH];
+
+export const INVOICE_LINE_MATCH_LABELS: Record<InvoiceLineMatchStatus, string> =
+  {
+    UNMATCHED: "Unmatched",
+    SUGGESTED: "Suggested",
+    MATCHED: "Matched",
+    SKIPPED: "Skipped",
+  };
+
+/** Header vs line-sum tolerance when reconciling invoice totals (EUR). */
+export const INVOICE_TOTAL_TOLERANCE_EUR = 0.05;
+
+/** Physical goods receiving progress (independent of document CONFIRMED). */
+export const INVOICE_RECEIVING_STATUS = {
+  NOT_RECEIVED: "NOT_RECEIVED",
+  PARTIALLY_RECEIVED: "PARTIALLY_RECEIVED",
+  FULLY_RECEIVED: "FULLY_RECEIVED",
+} as const;
+
+export type InvoiceReceivingStatus =
+  (typeof INVOICE_RECEIVING_STATUS)[keyof typeof INVOICE_RECEIVING_STATUS];
+
+export const INVOICE_RECEIVING_STATUS_LABELS: Record<
+  InvoiceReceivingStatus,
+  string
+> = {
+  NOT_RECEIVED: "Not received",
+  PARTIALLY_RECEIVED: "Partially received",
+  FULLY_RECEIVED: "Fully received",
+};
+
+/** Qty comparison tolerance in stock units when tracking remaining. */
+export const INVOICE_RECEIVE_QTY_TOLERANCE = 0.001;

@@ -63,6 +63,15 @@ export function MoreScreen() {
           Open WhatsApp / supplier websites, then receive goods
         </Text>
       </Pressable>
+      <Pressable
+        style={styles.row}
+        onPress={() => navigation.navigate("Invoices")}
+      >
+        <Text style={styles.rowTitle}>Invoices</Text>
+        <Text style={styles.copy}>
+          Capture supplier invoices, review AI extraction (no stock change)
+        </Text>
+      </Pressable>
       <Pressable style={styles.row} onPress={() => navigation.navigate("Delivery")}>
         <Text style={styles.rowTitle}>Delivery</Text>
         <Text style={styles.copy}>Add supplier stock without a full count</Text>

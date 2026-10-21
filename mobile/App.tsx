@@ -12,6 +12,9 @@ import { ScopeProvider } from "./src/scope";
 import { DeliveryScreen } from "./src/screens/DeliveryScreen";
 import { OrderingScreen } from "./src/screens/OrderingScreen";
 import { OrderApprovalsScreen } from "./src/screens/OrderApprovalsScreen";
+import { InvoicesScreen } from "./src/screens/InvoicesScreen";
+import { InvoiceDetailScreen } from "./src/screens/InvoiceDetailScreen";
+import { InvoiceReceiveScreen } from "./src/screens/InvoiceReceiveScreen";
 import { HomeScreen } from "./src/screens/HomeScreen";
 import { InventoryScreen } from "./src/screens/InventoryScreen";
 import { LoginScreen } from "./src/screens/LoginScreen";
@@ -196,6 +199,21 @@ function Root() {
               name="OrderApprovals"
               component={OrderApprovalsScreen}
               options={{ title: "Approvals" }}
+            />
+            <Stack.Screen
+              name="Invoices"
+              component={InvoicesScreen}
+              options={{ title: "Invoices" }}
+            />
+            <Stack.Screen
+              name="InvoiceDetail"
+              component={InvoiceDetailScreen}
+              options={{ title: "Invoice" }}
+            />
+            <Stack.Screen
+              name="InvoiceReceive"
+              component={InvoiceReceiveScreen}
+              options={{ title: "Receive goods" }}
             />
             <Stack.Screen
               name="Wastage"

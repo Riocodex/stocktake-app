@@ -184,9 +184,14 @@ export function OrderingScreen() {
                   {item.instructions}
                 </Text>
               ) : null}
-              {item.requiresApproval ? (
+              {item.requiresApproval && user?.role !== "SUPER_ADMIN" ? (
                 <Text style={styles.badge}>
                   Approval: {item.approval?.status ?? "not requested"}
+                </Text>
+              ) : null}
+              {item.requiresApproval && user?.role === "SUPER_ADMIN" ? (
+                <Text style={styles.badge}>
+                  Office approval (outlets only — you can open directly)
                 </Text>
               ) : null}
 
@@ -207,6 +212,7 @@ export function OrderingScreen() {
               ) : null}
 
               {item.requiresApproval &&
+              user?.role !== "SUPER_ADMIN" &&
               (!item.approval || item.approval.status === "REJECTED") ? (
                 <View style={styles.requestBox}>
                   <TextInput

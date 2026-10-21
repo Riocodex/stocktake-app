@@ -17,6 +17,9 @@ export type RootStackParamList = {
   Delivery: undefined;
   Ordering: undefined;
   OrderApprovals: undefined;
+  Invoices: undefined;
+  InvoiceDetail: { id: string };
+  InvoiceReceive: { id: string };
   Wastage: undefined;
   RecordWastage: undefined;
   Transfers: undefined;
