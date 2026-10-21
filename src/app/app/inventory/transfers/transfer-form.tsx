@@ -1,17 +1,18 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 
-import {
-  createTransferAction,
-  type TransferActionResult,
-} from "@/lib/actions/transfers";
 import { Button } from "@/components/ui";
+import { createTransfersByDestination } from "./create-multi";
 import { TransferPhotoPanel } from "./transfer-photo";
 
-const INITIAL: TransferActionResult = { error: null };
-
-type Line = { key: string; itemId: string; quantity: string };
+type Line = {
+  key: string;
+  itemId: string;
+  quantity: string;
+  toOutletId: string;
+};
 
 type CatalogItem = {
   id: string;
@@ -34,18 +35,17 @@ export function TransferForm({
   fixedFromOutletName: string | null;
   simulatedAi?: boolean;
 }) {
-  const [state, formAction, pending] = useActionState(
-    createTransferAction,
-    INITIAL,
-  );
+  const router = useRouter();
   const [fromOutletId, setFromOutletId] = useState(fixedFromOutletId ?? "");
-  const [toOutletId, setToOutletId] = useState("");
+  const [defaultToOutletId, setDefaultToOutletId] = useState("");
   const [note, setNote] = useState("");
   const [lines, setLines] = useState<Line[]>([
-    { key: "1", itemId: "", quantity: "" },
+    { key: "1", itemId: "", quantity: "", toOutletId: "" },
   ]);
   const [items, setItems] = useState<CatalogItem[]>(initialItems);
   const [loadingItems, setLoadingItems] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const effectiveFrom = fixedFromOutletId || fromOutletId;
 
@@ -113,18 +113,61 @@ export function TransferForm({
 
   const destinations = outlets.filter((outlet) => outlet.id !== effectiveFrom);
 
+  async function saveManual() {
+    setError(null);
+    if (!effectiveFrom) {
+      setError("Choose which outlet is sending stock.");
+      return;
+    }
+
+    const payload = lines
+      .filter((line) => line.itemId && Number(line.quantity) > 0)
+      .map((line) => ({
+        itemId: line.itemId,
+        quantity: Number(line.quantity),
+        toOutletId: line.toOutletId || defaultToOutletId,
+      }));
+
+    if (payload.some((line) => !line.toOutletId)) {
+      setError("Choose a destination for every product line.");
+      return;
+    }
+
+    setPending(true);
+    try {
+      const result = await createTransfersByDestination({
+        fromOutletId: effectiveFrom,
+        note,
+        lines: payload,
+      });
+      if (result.error || result.transfers.length === 0) {
+        setError(result.error ?? "Could not create transfer drafts.");
+        return;
+      }
+      if (result.transfers.length === 1) {
+        router.push(`/app/inventory/transfers/${result.transfers[0].id}`);
+      } else {
+        router.push("/app/inventory/transfers");
+      }
+      router.refresh();
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Could not create transfers.",
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+
   return (
-    <form action={formAction} className="space-y-5">
+    <div className="space-y-5">
       {fixedFromOutletId ? (
-        <>
-          <input type="hidden" name="fromOutletId" value={fixedFromOutletId} />
-          <div className="rounded-2xl border border-sage-100 bg-sage-50/60 px-4 py-3">
-            <p className="eyebrow text-sage-800">Sending from</p>
-            <p className="mt-1 text-sm font-semibold text-ink">
-              {fixedFromOutletName}
-            </p>
-          </div>
-        </>
+        <div className="rounded-2xl border border-sage-100 bg-sage-50/60 px-4 py-3">
+          <p className="eyebrow text-sage-800">Sending from</p>
+          <p className="mt-1 text-sm font-semibold text-ink">
+            {fixedFromOutletName}
+          </p>
+        </div>
       ) : (
         <div>
           <label
@@ -135,13 +178,13 @@ export function TransferForm({
           </label>
           <select
             id="fromOutletId"
-            name="fromOutletId"
-            required
             value={fromOutletId}
             onChange={(event) => {
               setFromOutletId(event.target.value);
-              setToOutletId("");
-              setLines([{ key: "1", itemId: "", quantity: "" }]);
+              setDefaultToOutletId("");
+              setLines([
+                { key: "1", itemId: "", quantity: "", toOutletId: "" },
+              ]);
             }}
             className="w-full rounded-2xl border border-ink/15 bg-white px-4 py-3 text-sm outline-none focus:border-clay"
           >
@@ -159,34 +202,42 @@ export function TransferForm({
 
       <div>
         <label
-          htmlFor="toOutletId"
+          htmlFor="defaultToOutletId"
           className="eyebrow mb-2 block text-ink-muted"
         >
-          To outlet
+          Default destination (optional)
         </label>
         <select
-          id="toOutletId"
-          name="toOutletId"
-          required
-          value={toOutletId}
-          onChange={(event) => setToOutletId(event.target.value)}
+          id="defaultToOutletId"
+          value={defaultToOutletId}
+          onChange={(event) => {
+            const next = event.target.value;
+            setDefaultToOutletId(next);
+            setLines((current) =>
+              current.map((line) =>
+                line.toOutletId ? line : { ...line, toOutletId: next },
+              ),
+            );
+          }}
           className="w-full rounded-2xl border border-ink/15 bg-white px-4 py-3 text-sm outline-none focus:border-clay"
         >
-          <option value="" disabled>
-            Choose…
-          </option>
+          <option value="">Set per product…</option>
           {destinations.map((outlet) => (
             <option key={outlet.id} value={outlet.id}>
               {outlet.name}
             </option>
           ))}
         </select>
+        <p className="mt-1 text-xs text-ink-muted">
+          You can still send different products to different outlets below.
+        </p>
       </div>
 
       {effectiveFrom ? (
         <TransferPhotoPanel
           fromOutletId={effectiveFrom}
-          toOutletId={toOutletId}
+          destinations={destinations}
+          defaultToOutletId={defaultToOutletId}
           note={note}
           simulated={simulatedAi}
         />
@@ -211,7 +262,7 @@ export function TransferForm({
           return (
             <div
               key={line.key}
-              className="grid gap-3 rounded-2xl border border-ink/8 bg-cream/40 p-4 sm:grid-cols-[1fr_7rem_auto]"
+              className="grid gap-3 rounded-2xl border border-ink/8 bg-cream/40 p-4 sm:grid-cols-[1fr_7rem_1fr_auto]"
             >
               <div>
                 {index === 0 ? (
@@ -220,7 +271,6 @@ export function TransferForm({
                   </label>
                 ) : null}
                 <select
-                  name="itemId"
                   value={line.itemId}
                   onChange={(event) =>
                     setLines((current) =>
@@ -253,7 +303,6 @@ export function TransferForm({
                   </label>
                 ) : null}
                 <input
-                  name="quantity"
                   type="number"
                   min="0.01"
                   step="any"
@@ -269,6 +318,33 @@ export function TransferForm({
                   }
                   className="w-full rounded-xl border border-ink/15 bg-white px-3 py-2 text-sm outline-none focus:border-clay"
                 />
+              </div>
+              <div>
+                {index === 0 ? (
+                  <label className="mb-1.5 block text-[11px] font-semibold text-ink-soft">
+                    Send to
+                  </label>
+                ) : null}
+                <select
+                  value={line.toOutletId}
+                  onChange={(event) =>
+                    setLines((current) =>
+                      current.map((entry) =>
+                        entry.key === line.key
+                          ? { ...entry, toOutletId: event.target.value }
+                          : entry,
+                      ),
+                    )
+                  }
+                  className="w-full rounded-xl border border-ink/15 bg-white px-3 py-2 text-sm outline-none focus:border-clay"
+                >
+                  <option value="">Choose…</option>
+                  {destinations.map((outlet) => (
+                    <option key={outlet.id} value={outlet.id}>
+                      {outlet.name}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className="flex items-end">
                 <button
@@ -293,7 +369,12 @@ export function TransferForm({
           onClick={() =>
             setLines((current) => [
               ...current,
-              { key: String(Date.now()), itemId: "", quantity: "" },
+              {
+                key: String(Date.now()),
+                itemId: "",
+                quantity: "",
+                toOutletId: defaultToOutletId,
+              },
             ])
           }
           className="text-sm font-semibold text-clay hover:underline"
@@ -308,36 +389,35 @@ export function TransferForm({
         </label>
         <textarea
           id="note"
-          name="note"
           rows={2}
           value={note}
           onChange={(event) => setNote(event.target.value)}
           className="w-full rounded-2xl border border-ink/15 bg-white px-4 py-3 text-sm outline-none focus:border-clay"
-          placeholder="e.g. Balluta running low on soft drinks"
+          placeholder="e.g. Balluta soft drinks, Valletta dry goods"
         />
       </div>
 
-      {state.error ? (
+      {error ? (
         <p
           role="alert"
           className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
         >
-          {state.error}
+          {error}
         </p>
       ) : null}
 
       <Button
-        type="submit"
+        type="button"
         size="lg"
+        onClick={() => void saveManual()}
         disabled={
           pending ||
           !effectiveFrom ||
-          !toOutletId ||
           !lines.some((line) => line.itemId && Number(line.quantity) > 0)
         }
       >
-        {pending ? "Creating…" : "Save manual draft"}
+        {pending ? "Creating…" : "Save manual draft(s)"}
       </Button>
-    </form>
+    </div>
   );
 }

@@ -13,7 +13,13 @@
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "rm -f dev.db dev.db-journal && prisma db push && tsx prisma/seed.ts",
-    "setup": "prisma generate && prisma db push && tsx prisma/seed.ts"
+    "setup": "prisma generate && prisma db push && tsx prisma/seed.ts",
+    "test:units": "tsx scripts/test-units.ts",
+    "test:recipes": "tsx scripts/test-recipes.ts",
+    "test:costing": "tsx scripts/test-dish-costing.ts",
+    "test:alerts": "tsx scripts/test-cost-alerts.ts",
+    "test:availability": "tsx scripts/test-dish-availability.ts",
+    "test:dish-wastage": "tsx scripts/test-dish-wastage.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

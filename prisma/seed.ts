@@ -223,7 +223,10 @@ async function main() {
   await prisma.stockPhoto.deleteMany();
   await prisma.stockTake.deleteMany();
   await prisma.outletStock.deleteMany();
+  await prisma.dishIngredient.deleteMany();
   await prisma.inventoryItem.deleteMany();
+  await prisma.dish.deleteMany();
+  await prisma.appSettings.deleteMany();
   await prisma.category.deleteMany();
   await prisma.user.deleteMany();
   await prisma.outlet.deleteMany();

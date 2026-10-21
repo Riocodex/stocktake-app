@@ -117,6 +117,12 @@ export const api = {
       token,
       body: body === undefined ? undefined : JSON.stringify(body),
     }),
+  patch: <T>(path: string, token: string | null, body?: unknown) =>
+    request<T>(path, {
+      method: "PATCH",
+      token,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }),
   del: <T>(path: string, token: string | null, body?: unknown) =>
     request<T>(path, {
       method: "DELETE",

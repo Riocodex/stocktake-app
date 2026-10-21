@@ -1,10 +1,3 @@
-import "server-only";
-
-import {
-  assertOutletAccess,
-  isSuperAdmin,
-  type SessionUser,
-} from "@/lib/auth";
 import {
   STOCK_MOVEMENT_REFERENCE,
   STOCK_MOVEMENT_TYPE,
@@ -129,7 +122,11 @@ export function movementHref(row: {
 }
 
 export async function listStockMovements(
-  user: SessionUser,
+  user: {
+    id: string;
+    role: string;
+    outletId: string | null;
+  },
   filters: {
     outletId?: string | null;
     itemId?: string | null;
@@ -139,6 +136,7 @@ export async function listStockMovements(
     take?: number;
   } = {},
 ) {
+  const { assertOutletAccess, isSuperAdmin } = await import("@/lib/auth");
   const scope = isSuperAdmin(user)
     ? filters.outletId && filters.outletId !== "all"
       ? filters.outletId

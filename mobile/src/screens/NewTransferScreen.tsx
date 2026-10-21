@@ -29,7 +29,12 @@ type CatalogItem = {
   quantity: number;
 };
 
-type Line = { itemId: string; quantity: string; search: string };
+type Line = {
+  itemId: string;
+  quantity: string;
+  search: string;
+  toOutletId: string;
+};
 
 type PhotoSuggestion = {
   itemId: string;
@@ -43,6 +48,53 @@ type PhotoSuggestion = {
   canTransfer: boolean;
 };
 
+async function createTransfersByDestination(
+  token: string,
+  input: {
+    fromOutletId: string;
+    note?: string;
+    imageUrl?: string;
+    lines: { itemId: string; quantity: number; toOutletId: string }[];
+  },
+) {
+  const grouped = new Map<string, Map<string, number>>();
+  for (const line of input.lines) {
+    if (!line.toOutletId || !line.itemId || line.quantity <= 0) continue;
+    if (line.toOutletId === input.fromOutletId) {
+      throw new ApiError(400, "Source and destination must be different.");
+    }
+    const byItem = grouped.get(line.toOutletId) ?? new Map<string, number>();
+    byItem.set(
+      line.itemId,
+      Math.round(((byItem.get(line.itemId) ?? 0) + line.quantity) * 100) / 100,
+    );
+    grouped.set(line.toOutletId, byItem);
+  }
+  if (grouped.size === 0) {
+    throw new ApiError(400, "Add products with destinations and quantities.");
+  }
+
+  const created: { id: string }[] = [];
+  for (const [toOutletId, byItem] of grouped) {
+    const result = await api.post<{ transfer: { id: string } }>(
+      "/api/mobile/transfers",
+      token,
+      {
+        fromOutletId: input.fromOutletId,
+        toOutletId,
+        note: input.note,
+        imageUrl: input.imageUrl,
+        lines: [...byItem.entries()].map(([itemId, quantity]) => ({
+          itemId,
+          quantity,
+        })),
+      },
+    );
+    created.push(result.transfer);
+  }
+  return created;
+}
+
 export function NewTransferScreen() {
   const { token, user } = useAuth();
   const { outletId, setOutletId, outlets, isSuper } = useScope();
@@ -52,10 +104,10 @@ export function NewTransferScreen() {
   const [allOutlets, setAllOutlets] = useState<{ id: string; name: string }[]>(
     [],
   );
-  const [toOutletId, setToOutletId] = useState("");
+  const [defaultToOutletId, setDefaultToOutletId] = useState("");
   const [note, setNote] = useState("");
   const [lines, setLines] = useState<Line[]>([
-    { itemId: "", quantity: "", search: "" },
+    { itemId: "", quantity: "", search: "", toOutletId: "" },
   ]);
   const [pending, setPending] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
@@ -68,6 +120,7 @@ export function NewTransferScreen() {
     {},
   );
   const [photoQty, setPhotoQty] = useState<Record<string, string>>({});
+  const [photoDest, setPhotoDest] = useState<Record<string, string>>({});
   const [photoSimulated, setPhotoSimulated] = useState(false);
 
   const fromOutletId = isSuper ? outletId : user?.outletId ?? "";
@@ -103,6 +156,8 @@ export function NewTransferScreen() {
     setPhotoSuggestions([]);
     setPhotoPreview(null);
     setPhotoUrl(null);
+    setDefaultToOutletId("");
+    setLines([{ itemId: "", quantity: "", search: "", toOutletId: "" }]);
   }, [fromOutletId]);
 
   const destinations = useMemo(
@@ -169,6 +224,14 @@ export function NewTransferScreen() {
           ]),
         ),
       );
+      setPhotoDest(
+        Object.fromEntries(
+          (analysis.suggestions ?? []).map((row) => [
+            row.itemId,
+            defaultToOutletId,
+          ]),
+        ),
+      );
       if (!(analysis.suggestions ?? []).length) {
         Alert.alert(
           analysis.simulated ? "Photo read (simulated)" : "No matches",
@@ -185,17 +248,22 @@ export function NewTransferScreen() {
     }
   }
 
+  async function finishCreated(created: { id: string }[]) {
+    if (created.length === 1) {
+      navigation.replace("Transfer", { id: created[0].id });
+      return;
+    }
+    Alert.alert(
+      "Drafts saved",
+      `${created.length} transfer drafts created (one per destination).`,
+    );
+    navigation.navigate("Transfers");
+  }
+
   async function confirmPhotoTransfer() {
     if (!token) return;
     if (!fromOutletId) {
       Alert.alert("Choose source", "Pick which outlet is sending stock.");
-      return;
-    }
-    if (!toOutletId) {
-      Alert.alert(
-        "Choose destination",
-        "Pick which outlet should receive the stock, then confirm the photo.",
-      );
       return;
     }
     const selected = photoSuggestions
@@ -203,6 +271,7 @@ export function NewTransferScreen() {
       .map((row) => ({
         itemId: row.itemId,
         quantity: Number(photoQty[row.itemId] ?? row.quantity),
+        toOutletId: photoDest[row.itemId] || defaultToOutletId,
       }))
       .filter((line) => Number.isFinite(line.quantity) && line.quantity > 0);
     if (!selected.length) {
@@ -212,21 +281,23 @@ export function NewTransferScreen() {
       );
       return;
     }
+    if (selected.some((line) => !line.toOutletId)) {
+      Alert.alert(
+        "Choose destinations",
+        "Pick where each selected product should go.",
+      );
+      return;
+    }
 
     setPending(true);
     try {
-      const result = await api.post<{ transfer: { id: string } }>(
-        "/api/mobile/transfers",
-        token,
-        {
-          fromOutletId,
-          toOutletId,
-          note: note || undefined,
-          imageUrl: photoUrl || undefined,
-          lines: selected,
-        },
-      );
-      navigation.replace("Transfer", { id: result.transfer.id });
+      const created = await createTransfersByDestination(token, {
+        fromOutletId,
+        note: note || undefined,
+        imageUrl: photoUrl || undefined,
+        lines: selected,
+      });
+      await finishCreated(created);
     } catch (caught) {
       Alert.alert(
         "Could not create",
@@ -243,29 +314,34 @@ export function NewTransferScreen() {
       Alert.alert("Choose source", "Pick which outlet is sending stock.");
       return;
     }
-    if (!toOutletId) {
-      Alert.alert("Choose destination", "Pick which outlet should receive stock.");
+    const payload = lines
+      .filter((line) => line.itemId && Number(line.quantity) > 0)
+      .map((line) => ({
+        itemId: line.itemId,
+        quantity: Number(line.quantity),
+        toOutletId: line.toOutletId || defaultToOutletId,
+      }));
+    if (!payload.length) {
+      Alert.alert("Add products", "Choose products and quantities to transfer.");
       return;
     }
+    if (payload.some((line) => !line.toOutletId)) {
+      Alert.alert(
+        "Choose destinations",
+        "Pick where each product should go.",
+      );
+      return;
+    }
+
     setPending(true);
     try {
-      const result = await api.post<{ transfer: { id: string } }>(
-        "/api/mobile/transfers",
-        token,
-        {
-          fromOutletId,
-          toOutletId,
-          note: note || undefined,
-          imageUrl: photoUrl || undefined,
-          lines: lines
-            .filter((line) => line.itemId && Number(line.quantity) > 0)
-            .map((line) => ({
-              itemId: line.itemId,
-              quantity: Number(line.quantity),
-            })),
-        },
-      );
-      navigation.replace("Transfer", { id: result.transfer.id });
+      const created = await createTransfersByDestination(token, {
+        fromOutletId,
+        note: note || undefined,
+        imageUrl: photoUrl || undefined,
+        lines: payload,
+      });
+      await finishCreated(created);
     } catch (caught) {
       Alert.alert(
         "Could not create",
@@ -280,7 +356,8 @@ export function NewTransferScreen() {
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <Text style={styles.title}>New transfer</Text>
       <Text style={styles.copy}>
-        Saved as a draft. Stock only leaves the source when you send it.
+        Send multiple products to different outlets in one go. Each destination
+        gets its own draft.
       </Text>
 
       {isSuper ? (
@@ -296,26 +373,43 @@ export function NewTransferScreen() {
         <Text style={styles.copy}>From {user?.outletName}</Text>
       )}
 
-      <Text style={styles.label}>To</Text>
+      <Text style={styles.label}>Default destination (optional)</Text>
       <View style={styles.list}>
         {destinations.map((outlet) => (
           <Pressable
             key={outlet.id}
-            onPress={() => setToOutletId(outlet.id)}
+            onPress={() => {
+              setDefaultToOutletId(outlet.id);
+              setLines((current) =>
+                current.map((line) =>
+                  line.toOutletId ? line : { ...line, toOutletId: outlet.id },
+                ),
+              );
+              setPhotoDest((current) => {
+                const next = { ...current };
+                for (const row of photoSuggestions) {
+                  if (!next[row.itemId]) next[row.itemId] = outlet.id;
+                }
+                return next;
+              });
+            }}
             style={[
               styles.option,
-              toOutletId === outlet.id && styles.optionActive,
+              defaultToOutletId === outlet.id && styles.optionActive,
             ]}
           >
             <Text style={styles.optionTitle}>{outlet.name}</Text>
           </Pressable>
         ))}
       </View>
+      <Text style={styles.copy}>
+        You can still override destination on each product.
+      </Text>
 
       <Text style={styles.label}>Photo transfer</Text>
       <Text style={styles.copy}>
-        Photograph what you are sending. Confirm matches and quantities to save
-        the draft — no manual product pick needed.
+        Photograph what you are sending. Set quantity and destination per
+        product, then confirm.
       </Text>
       <View style={styles.photoActions}>
         <Pressable
@@ -366,27 +460,47 @@ export function NewTransferScreen() {
                 </Text>
               </Pressable>
               {row.canTransfer ? (
-                <TextInput
-                  keyboardType="decimal-pad"
-                  value={photoQty[row.itemId] ?? ""}
-                  onChangeText={(value) =>
-                    setPhotoQty((current) => ({
-                      ...current,
-                      [row.itemId]: value,
-                    }))
-                  }
-                  style={styles.input}
-                />
+                <>
+                  <TextInput
+                    keyboardType="decimal-pad"
+                    value={photoQty[row.itemId] ?? ""}
+                    onChangeText={(value) =>
+                      setPhotoQty((current) => ({
+                        ...current,
+                        [row.itemId]: value,
+                      }))
+                    }
+                    placeholder="Quantity"
+                    placeholderTextColor={colors.muted}
+                    style={styles.input}
+                  />
+                  <Text style={styles.label}>Send to</Text>
+                  <View style={styles.list}>
+                    {destinations.map((outlet) => (
+                      <Pressable
+                        key={outlet.id}
+                        onPress={() =>
+                          setPhotoDest((current) => ({
+                            ...current,
+                            [row.itemId]: outlet.id,
+                          }))
+                        }
+                        style={[
+                          styles.option,
+                          (photoDest[row.itemId] || defaultToOutletId) ===
+                            outlet.id && styles.optionActive,
+                        ]}
+                      >
+                        <Text style={styles.optionTitle}>{outlet.name}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </>
               ) : null}
             </View>
           ))}
-          {!toOutletId ? (
-            <Text style={styles.warn}>
-              Choose the destination outlet above, then confirm.
-            </Text>
-          ) : null}
           <PrimaryButton
-            label={pending ? "Saving draft…" : "Confirm photo transfer"}
+            label={pending ? "Saving drafts…" : "Confirm photo transfer"}
             onPress={() => void confirmPhotoTransfer()}
             disabled={photoBusy || pending}
           />
@@ -427,9 +541,7 @@ export function NewTransferScreen() {
             <TextInput
               placeholder="Search the catalogue"
               placeholderTextColor={colors.muted}
-              value={
-                selected && !line.search ? selectedLabel : line.search
-              }
+              value={selected && !line.search ? selectedLabel : line.search}
               onChangeText={(search) =>
                 setLines((current) =>
                   current.map((entry, entryIndex) =>
@@ -477,9 +589,6 @@ export function NewTransferScreen() {
                     On hand {qty(selected?.quantity ?? 0)} {selected?.unit}
                   </Text>
                 )}
-            {!line.itemId && fromOutletId && matches.length === 0 ? (
-              <Text style={styles.copy}>No matching products.</Text>
-            ) : null}
             <Text style={styles.label}>
               Quantity{selected ? ` (${selected.unit})` : ""}
             </Text>
@@ -495,6 +604,30 @@ export function NewTransferScreen() {
               }
               style={styles.input}
             />
+            <Text style={styles.label}>Send to</Text>
+            <View style={styles.list}>
+              {destinations.map((outlet) => (
+                <Pressable
+                  key={outlet.id}
+                  onPress={() =>
+                    setLines((current) =>
+                      current.map((entry, entryIndex) =>
+                        entryIndex === index
+                          ? { ...entry, toOutletId: outlet.id }
+                          : entry,
+                      ),
+                    )
+                  }
+                  style={[
+                    styles.option,
+                    (line.toOutletId || defaultToOutletId) === outlet.id &&
+                      styles.optionActive,
+                  ]}
+                >
+                  <Text style={styles.optionTitle}>{outlet.name}</Text>
+                </Pressable>
+              ))}
+            </View>
           </View>
         );
       })}
@@ -503,7 +636,12 @@ export function NewTransferScreen() {
         onPress={() =>
           setLines((current) => [
             ...current,
-            { itemId: "", quantity: "", search: "" },
+            {
+              itemId: "",
+              quantity: "",
+              search: "",
+              toOutletId: defaultToOutletId,
+            },
           ])
         }
       >
@@ -519,9 +657,9 @@ export function NewTransferScreen() {
       />
 
       <PrimaryButton
-        label={pending ? "Saving…" : "Save draft"}
+        label={pending ? "Saving…" : "Save manual draft(s)"}
         onPress={save}
-        disabled={pending || !fromOutletId || !toOutletId}
+        disabled={pending || !fromOutletId}
       />
     </ScrollView>
   );

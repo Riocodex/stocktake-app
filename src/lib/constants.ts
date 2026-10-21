@@ -94,11 +94,21 @@ export const VARIANCE_ALERT_RATIO = 0.25;
 /// Below this model confidence a detected line is highlighted for review.
 export const LOW_CONFIDENCE_THRESHOLD = 0.7;
 
-/** Physical inventory wastage today; DISH reserved for future recipe wastage. */
+/** ITEM deducts stock; DISH records financial loss only (no ingredient deduction). */
 export const WASTAGE_TARGET = {
   ITEM: "ITEM",
   DISH: "DISH",
 } as const;
+
+export type WastageTarget =
+  (typeof WASTAGE_TARGET)[keyof typeof WASTAGE_TARGET];
+
+export const WASTAGE_TARGET_LABELS: Record<WastageTarget, string> = {
+  ITEM: "Item",
+  DISH: "Dish",
+};
+
+export const DISH_WASTAGE_UNIT = "portion";
 
 export const WASTAGE_REASONS = {
   SPOILED: "SPOILED",
@@ -182,3 +192,68 @@ export const STOCK_MOVEMENT_REFERENCE = {
   TRANSFER: "TRANSFER",
   TRANSFER_LINE: "TRANSFER_LINE",
 } as const;
+
+/** Menu sections for prepared Dishes (separate from inventory Category). */
+export const DISH_CATEGORIES = [
+  "Smoothies",
+  "Juices",
+  "Coffee",
+  "Cocktails",
+  "Soft drinks",
+  "Starters",
+  "Mains",
+  "Burgers",
+  "Pasta",
+  "Salads",
+  "Sides",
+  "Desserts",
+  "Breakfast",
+  "Other",
+] as const;
+
+export type DishCategory = (typeof DISH_CATEGORIES)[number];
+
+/** Default food-cost alert thresholds (%). Stored in AppSettings; overridable by SUPER_ADMIN. */
+export const DEFAULT_FOOD_COST_WARNING_PERCENT = 30;
+export const DEFAULT_FOOD_COST_CRITICAL_PERCENT = 35;
+
+export const COST_ALERT_LEVEL = {
+  HEALTHY: "HEALTHY",
+  WARNING: "WARNING",
+  CRITICAL: "CRITICAL",
+  UNRESOLVED: "UNRESOLVED",
+} as const;
+
+export type CostAlertLevel =
+  (typeof COST_ALERT_LEVEL)[keyof typeof COST_ALERT_LEVEL];
+
+export const COST_ALERT_LEVEL_LABELS: Record<CostAlertLevel, string> = {
+  HEALTHY: "Healthy",
+  WARNING: "Warning",
+  CRITICAL: "Critical",
+  UNRESOLVED: "Unresolved",
+};
+
+/**
+ * Minimum complete portions for AVAILABLE status.
+ * Below this (but ≥ 1) → LOW. Zero → UNAVAILABLE.
+ * Kept as a constant for now; wire into AppSettings when product wants UI edits.
+ */
+export const DEFAULT_AVAILABILITY_AVAILABLE_MIN_PORTIONS = 5;
+
+export const AVAILABILITY_STATUS = {
+  AVAILABLE: "AVAILABLE",
+  LOW: "LOW",
+  UNAVAILABLE: "UNAVAILABLE",
+  UNRESOLVED: "UNRESOLVED",
+} as const;
+
+export type AvailabilityStatus =
+  (typeof AVAILABILITY_STATUS)[keyof typeof AVAILABILITY_STATUS];
+
+export const AVAILABILITY_STATUS_LABELS: Record<AvailabilityStatus, string> = {
+  AVAILABLE: "Available",
+  LOW: "Low",
+  UNAVAILABLE: "Unavailable",
+  UNRESOLVED: "Unresolved",
+};

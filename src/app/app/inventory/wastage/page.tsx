@@ -5,8 +5,11 @@ import { isAiConfigured } from "@/lib/ai";
 import { isSuperAdmin, requireUser, resolveOutletScope } from "@/lib/auth";
 import {
   WASTAGE_REASON_LABELS,
+  WASTAGE_TARGET,
   type WastageReason,
 } from "@/lib/constants";
+import { calculateDishCostsForOutlet } from "@/lib/dish-costing";
+import { listDishes } from "@/lib/dishes";
 import { prisma } from "@/lib/db";
 import { formatDateTime, formatMoney, formatQty } from "@/lib/format";
 import { getOutlets } from "@/lib/queries";
@@ -37,6 +40,8 @@ export default async function WastagePage({
     from?: string;
     to?: string;
     record?: string;
+    kind?: string;
+    target?: string;
   }>;
 }) {
   const user = await requireUser();
@@ -44,11 +49,18 @@ export default async function WastagePage({
   const scope = resolveOutletScope(user, params.outlet ?? null);
   const superAdmin = isSuperAdmin(user);
   const showForm = params.record === "1" || params.record === "true";
-  // Wastage on-hand figures are always for one outlet. Never invent a fake
-  // outlet id (e.g. "__none__") or sum across venues.
   const formOutletId = superAdmin ? scope.outletId : user.outletId;
+  const initialTarget =
+    params.kind === "dish" || params.target === WASTAGE_TARGET.DISH
+      ? WASTAGE_TARGET.DISH
+      : WASTAGE_TARGET.ITEM;
+  const targetFilter =
+    params.target === WASTAGE_TARGET.ITEM ||
+    params.target === WASTAGE_TARGET.DISH
+      ? params.target
+      : null;
 
-  const [outlets, catalogue, data] = await Promise.all([
+  const [outlets, catalogue, dishes, data] = await Promise.all([
     superAdmin ? getOutlets() : Promise.resolve([]),
     formOutletId
       ? prisma.inventoryItem.findMany({
@@ -62,6 +74,7 @@ export default async function WastagePage({
           orderBy: [{ category: { sortOrder: "asc" } }, { name: "asc" }],
         })
       : Promise.resolve([]),
+    showForm ? listDishes(user, { active: "active" }) : Promise.resolve([]),
     listWastage(user, {
       outletId: scope.outletId,
       q: params.q,
@@ -69,8 +82,17 @@ export default async function WastagePage({
       itemId: params.itemId,
       from: params.from,
       to: params.to,
+      targetType: targetFilter,
     }),
   ]);
+
+  const costBatch =
+    showForm && dishes.length > 0
+      ? await calculateDishCostsForOutlet(
+          user,
+          dishes.map((dish) => dish.id),
+        )
+      : null;
 
   const formItems = catalogue.map((item) => {
     const stock = item.outletStock[0] ?? null;
@@ -87,6 +109,30 @@ export default async function WastagePage({
     };
   });
 
+  const formDishes = dishes.map((dish) => {
+    const cost =
+      costBatch && costBatch.ok ? costBatch.costs.get(dish.id) : null;
+    const canWaste = cost?.status === "COMPLETE" && cost.dishCost !== null;
+    let blockReason: string | null = null;
+    if (!cost || cost.status === "NO_RECIPE") {
+      blockReason = "No recipe configured.";
+    } else if (cost.status === "INCOMPLETE") {
+      blockReason =
+        cost.ingredients.find((line) => line.issue)?.issue ??
+        "Incomplete recipe cost.";
+    }
+    return {
+      id: dish.id,
+      name: dish.name,
+      category: dish.category,
+      dishCost: cost?.dishCost ?? null,
+      costingStatus: cost?.status ?? "NO_RECIPE",
+      costingStatusLabel: cost?.statusLabel ?? "No recipe",
+      canWaste: Boolean(canWaste),
+      blockReason,
+    };
+  });
+
   const filterHref = (overrides: Record<string, string | undefined>) => {
     const next = new URLSearchParams();
     const merged = {
@@ -96,6 +142,8 @@ export default async function WastagePage({
       itemId: params.itemId,
       from: params.from,
       to: params.to,
+      target: targetFilter ?? undefined,
+      kind: params.kind,
       ...overrides,
     };
     for (const [key, value] of Object.entries(merged)) {
@@ -119,8 +167,8 @@ export default async function WastagePage({
             Wastage
           </h1>
           <p className="mt-2 max-w-xl text-sm text-ink-muted">
-            Record spoiled, expired or damaged stock. Quantities leave live
-            inventory immediately.
+            Item wastage deducts live stock. Dish wastage records ingredient
+            cost loss only — no recipe stock is deducted.
           </p>
         </div>
 
@@ -141,7 +189,7 @@ export default async function WastagePage({
           tone="clay"
         />
         <StatCard
-          label="Items wasted today"
+          label="Records today"
           value={String(data.summary.todayCount)}
           tone="ink"
         />
@@ -154,16 +202,17 @@ export default async function WastagePage({
 
       {showForm ? (
         <Card className="max-w-2xl">
-          <h2 className="text-lg font-bold text-ink">Record item wastage</h2>
+          <h2 className="text-lg font-bold text-ink">Record wastage</h2>
           <p className="mt-1 text-sm text-ink-muted">
-            Stock cannot go negative. Cost is taken from the outlet price at the
-            time of recording.
+            Choose Item or Dish. Dish loss uses the current group-wide
+            ingredient cost and never changes inventory.
           </p>
           <div className="mt-5">
             <WastageForm
-              key={formOutletId ?? "no-outlet"}
+              key={`${formOutletId ?? "no-outlet"}-${initialTarget}`}
               outlets={outlets}
               items={formItems}
+              dishes={formDishes}
               fixedOutletId={formOutletId}
               fixedOutletName={
                 superAdmin
@@ -173,6 +222,7 @@ export default async function WastagePage({
               }
               recordPath="/app/inventory/wastage"
               simulatedAi={!isAiConfigured()}
+              initialTarget={initialTarget}
             />
           </div>
         </Card>
@@ -181,7 +231,7 @@ export default async function WastagePage({
       <Card>
         <form
           method="get"
-          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"
+          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6"
         >
           {scope.outletId ? (
             <input type="hidden" name="outlet" value={scope.outletId} />
@@ -194,9 +244,27 @@ export default async function WastagePage({
               id="q"
               name="q"
               defaultValue={params.q ?? ""}
-              placeholder="Product or note"
+              placeholder="Product, dish or note"
               className="w-full rounded-xl border border-ink/15 bg-white px-3 py-2 text-sm outline-none focus:border-clay"
             />
+          </div>
+          <div>
+            <label
+              htmlFor="target"
+              className="eyebrow mb-1.5 block text-ink-muted"
+            >
+              Type
+            </label>
+            <select
+              id="target"
+              name="target"
+              defaultValue={targetFilter ?? ""}
+              className="w-full rounded-xl border border-ink/15 bg-white px-3 py-2 text-sm outline-none focus:border-clay"
+            >
+              <option value="">All</option>
+              <option value={WASTAGE_TARGET.ITEM}>Item</option>
+              <option value={WASTAGE_TARGET.DISH}>Dish</option>
+            </select>
           </div>
           <div>
             <label
@@ -245,7 +313,7 @@ export default async function WastagePage({
               className="w-full rounded-xl border border-ink/15 bg-white px-3 py-2 text-sm outline-none focus:border-clay"
             />
           </div>
-          <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-5">
+          <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-6">
             <button
               type="submit"
               className="rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white"
@@ -269,19 +337,20 @@ export default async function WastagePage({
       {data.rows.length === 0 ? (
         <EmptyState
           title="No wastage recorded"
-          description="When stock is spoiled, expired or damaged, record it here so inventory stays accurate."
+          description="Record item stock loss or prepared dish financial loss here."
         />
       ) : (
         <TableShell
           head={
             <>
               <Th>When</Th>
-              <Th>Product</Th>
+              <Th>Type</Th>
+              <Th>Name</Th>
               <Th>Qty</Th>
               <Th>Reason</Th>
               {superAdmin && !scope.outletId ? <Th>Outlet</Th> : null}
               <Th>By</Th>
-              <Th className="text-right">Value</Th>
+              <Th className="text-right">Loss</Th>
             </>
           }
         >
@@ -289,6 +358,15 @@ export default async function WastagePage({
             <tr key={row.id} className="border-t border-ink/6">
               <Td className="whitespace-nowrap text-ink-muted">
                 {formatDateTime(row.createdAt)}
+              </Td>
+              <Td>
+                <Badge
+                  tone={
+                    row.targetType === WASTAGE_TARGET.DISH ? "neutral" : "warn"
+                  }
+                >
+                  {row.targetTypeLabel}
+                </Badge>
               </Td>
               <Td>
                 <div className="flex items-start gap-3">
@@ -301,20 +379,41 @@ export default async function WastagePage({
                     />
                   ) : null}
                   <div>
-                    <Link
-                      href={`/app/inventory/${row.itemId}`}
-                      className="font-semibold text-ink hover:text-clay"
-                    >
-                      {row.itemName}
-                    </Link>
+                    {row.targetType === WASTAGE_TARGET.DISH && row.dishId ? (
+                      <Link
+                        href={`/app/products/dishes/${row.dishId}`}
+                        className="font-semibold text-ink hover:text-clay"
+                      >
+                        {row.itemName}
+                      </Link>
+                    ) : row.itemId ? (
+                      <Link
+                        href={`/app/inventory/${row.itemId}`}
+                        className="font-semibold text-ink hover:text-clay"
+                      >
+                        {row.itemName}
+                      </Link>
+                    ) : (
+                      <span className="font-semibold text-ink">
+                        {row.itemName}
+                      </span>
+                    )}
                     {row.note ? (
                       <p className="mt-0.5 text-xs text-ink-muted">{row.note}</p>
+                    ) : null}
+                    {row.targetType === WASTAGE_TARGET.DISH ? (
+                      <p className="mt-0.5 text-xs text-ink-muted">
+                        Financial loss only
+                      </p>
                     ) : null}
                   </div>
                 </div>
               </Td>
               <Td>
                 {formatQty(row.quantity)} {row.unit}
+                {row.targetType === WASTAGE_TARGET.DISH && row.quantity !== 1
+                  ? "s"
+                  : ""}
               </Td>
               <Td>
                 <Badge tone="warn">{row.reasonLabel}</Badge>

@@ -275,3 +275,71 @@ export async function receiveProductAction(
   }
   return result;
 }
+
+/**
+ * SUPER_ADMIN updates the group-wide purchase price used for dish costing.
+ * Writes PriceHistory with outletId null (group reference). Does not change
+ * OutletStock quantities or outlet unit prices.
+ */
+export async function updateReferencePriceAction(
+  _previous: InventoryActionResult,
+  formData: FormData,
+): Promise<InventoryActionResult> {
+  const user = await requireUser();
+  if (!isSuperAdmin(user)) {
+    return { error: "Only super admins can edit the group purchase price." };
+  }
+
+  const itemId = String(formData.get("itemId") ?? "").trim();
+  const price = Number(formData.get("price"));
+  if (!itemId) return { error: "Item is required." };
+  if (!Number.isFinite(price) || price < 0) {
+    return { error: "Price must be zero or more." };
+  }
+
+  const nextPrice = Math.round(price * 100) / 100;
+  const item = await prisma.inventoryItem.findUnique({
+    where: { id: itemId },
+    select: { id: true, name: true, referencePrice: true },
+  });
+  if (!item) return { error: "Item not found." };
+
+  const previousPrice = item.referencePrice;
+  if (Math.abs(previousPrice - nextPrice) < 0.005) {
+    return { error: null, message: "Purchase price unchanged." };
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.inventoryItem.update({
+      where: { id: itemId },
+      data: { referencePrice: nextPrice },
+    });
+    await tx.priceHistory.create({
+      data: {
+        itemId,
+        outletId: null,
+        price: nextPrice,
+        previousPrice,
+        source: "MANUAL",
+      },
+    });
+    await tx.activityLog.create({
+      data: {
+        userId: user.id,
+        outletId: user.outletId,
+        action: "ITEM_REFERENCE_PRICE_UPDATED",
+        detail: `${item.name}: €${previousPrice.toFixed(2)} → €${nextPrice.toFixed(2)}`,
+      },
+    });
+  });
+
+  revalidatePath("/app/inventory");
+  revalidatePath(`/app/inventory/${itemId}`);
+  revalidatePath("/app/products");
+  revalidatePath("/app/products/items");
+  revalidatePath("/app/products/dishes");
+  return {
+    error: null,
+    message: `Group purchase price updated to €${nextPrice.toFixed(2)}. Dish costs recalculate on next view.`,
+  };
+}

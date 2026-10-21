@@ -98,7 +98,7 @@ export function InventoryScreen() {
           </Pressable>
           <Pressable
             style={styles.newButton}
-            onPress={() => navigation.navigate("NewProduct")}
+            onPress={() => navigation.navigate("AddProduct")}
           >
             <Text style={styles.newText}>Add</Text>
           </Pressable>

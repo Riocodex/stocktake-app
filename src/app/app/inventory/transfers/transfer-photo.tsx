@@ -1,9 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button, cn } from "@/components/ui";
+import { createTransfersByDestination } from "./create-multi";
 
 type Suggestion = {
   key: string;
@@ -29,12 +30,14 @@ type AnalyzeResponse = {
 
 export function TransferPhotoPanel({
   fromOutletId,
-  toOutletId,
+  destinations,
+  defaultToOutletId,
   note,
   simulated,
 }: {
   fromOutletId: string;
-  toOutletId: string;
+  destinations: { id: string; name: string }[];
+  defaultToOutletId: string;
   note?: string;
   simulated: boolean;
 }) {
@@ -52,7 +55,19 @@ export function TransferPhotoPanel({
   >([]);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [quantities, setQuantities] = useState<Record<string, string>>({});
+  const [destByItem, setDestByItem] = useState<Record<string, string>>({});
   const [provider, setProvider] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!defaultToOutletId) return;
+    setDestByItem((current) => {
+      const next = { ...current };
+      for (const row of suggestions) {
+        if (!next[row.itemId]) next[row.itemId] = defaultToOutletId;
+      }
+      return next;
+    });
+  }, [defaultToOutletId, suggestions]);
 
   async function handleFile(file: File | null) {
     if (!file) return;
@@ -94,6 +109,11 @@ export function TransferPhotoPanel({
           rows.map((row) => [row.itemId, String(row.quantity)]),
         ),
       );
+      setDestByItem(
+        Object.fromEntries(
+          rows.map((row) => [row.itemId, defaultToOutletId || ""]),
+        ),
+      );
       if (rows.length === 0) {
         setMessage(
           payload.simulated
@@ -116,16 +136,13 @@ export function TransferPhotoPanel({
   async function confirmPhotoTransfer() {
     setError(null);
     setMessage(null);
-    if (!toOutletId) {
-      setError("Choose the destination outlet above first.");
-      return;
-    }
 
     const lines = suggestions
       .filter((row) => selected[row.itemId])
       .map((row) => ({
         itemId: row.itemId,
         quantity: Number(quantities[row.itemId] ?? row.quantity),
+        toOutletId: destByItem[row.itemId] || "",
       }))
       .filter((line) => Number.isFinite(line.quantity) && line.quantity > 0);
 
@@ -133,29 +150,28 @@ export function TransferPhotoPanel({
       setError("Select at least one matched product with a quantity.");
       return;
     }
+    if (lines.some((line) => !line.toOutletId)) {
+      setError("Choose a destination outlet for every selected product.");
+      return;
+    }
 
     setConfirming(true);
     try {
-      const response = await fetch("/api/mobile/transfers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fromOutletId,
-          toOutletId,
-          note: note || undefined,
-          imageUrl: imageUrl || undefined,
-          lines,
-        }),
+      const result = await createTransfersByDestination({
+        fromOutletId,
+        note,
+        imageUrl: imageUrl || undefined,
+        lines,
       });
-      const payload = (await response.json()) as {
-        error?: string;
-        transfer?: { id: string };
-      };
-      if (!response.ok || !payload.transfer?.id) {
-        setError(payload.error ?? "Could not create the transfer draft.");
+      if (result.error || result.transfers.length === 0) {
+        setError(result.error ?? "Could not create transfer drafts.");
         return;
       }
-      router.push(`/app/inventory/transfers/${payload.transfer.id}`);
+      if (result.transfers.length === 1) {
+        router.push(`/app/inventory/transfers/${result.transfers[0].id}`);
+      } else {
+        router.push("/app/inventory/transfers");
+      }
       router.refresh();
     } catch (caught) {
       setError(
@@ -173,8 +189,8 @@ export function TransferPhotoPanel({
       <div>
         <p className="eyebrow text-clay">Photo transfer</p>
         <p className="mt-1 text-sm text-ink-muted">
-          Photograph what you are sending. Confirm the matched products and
-          quantities — that creates the draft. No manual product pick needed.
+          Photograph what you are sending. Pick a destination per product — one
+          draft is created for each outlet.
         </p>
       </div>
 
@@ -246,34 +262,56 @@ export function TransferPhotoPanel({
                     }))
                   }
                 />
-                <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-ink">{row.name}</p>
-                  <p className="text-xs text-ink-muted">
-                    Seen as “{row.label}” · {Math.round(row.confidence * 100)}%
-                    confidence · on hand {row.onHand} {row.unit}
-                  </p>
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div>
+                    <p className="font-semibold text-ink">{row.name}</p>
+                    <p className="text-xs text-ink-muted">
+                      Seen as “{row.label}” ·{" "}
+                      {Math.round(row.confidence * 100)}% confidence · on hand{" "}
+                      {row.onHand} {row.unit}
+                    </p>
+                  </div>
                   {!row.canTransfer ? (
-                    <p className="mt-1 text-xs font-semibold text-amber-800">
+                    <p className="text-xs font-semibold text-amber-800">
                       No stock at source — cannot transfer.
                     </p>
                   ) : (
-                    <div className="mt-2 flex items-center gap-2">
-                      <span className="text-xs text-ink-muted">Qty</span>
-                      <input
-                        type="number"
-                        min="0.01"
-                        step="any"
-                        max={row.onHand}
-                        value={quantities[row.itemId] ?? ""}
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-ink-muted">Qty</span>
+                        <input
+                          type="number"
+                          min="0.01"
+                          step="any"
+                          max={row.onHand}
+                          value={quantities[row.itemId] ?? ""}
+                          onChange={(event) =>
+                            setQuantities((current) => ({
+                              ...current,
+                              [row.itemId]: event.target.value,
+                            }))
+                          }
+                          className="w-24 rounded-xl border border-ink/15 px-2 py-1 text-sm"
+                        />
+                        <span className="text-xs text-ink-muted">{row.unit}</span>
+                      </div>
+                      <select
+                        value={destByItem[row.itemId] ?? ""}
                         onChange={(event) =>
-                          setQuantities((current) => ({
+                          setDestByItem((current) => ({
                             ...current,
                             [row.itemId]: event.target.value,
                           }))
                         }
-                        className="w-24 rounded-xl border border-ink/15 px-2 py-1 text-sm"
-                      />
-                      <span className="text-xs text-ink-muted">{row.unit}</span>
+                        className="w-full rounded-xl border border-ink/15 bg-white px-2 py-1.5 text-sm"
+                      >
+                        <option value="">Send to…</option>
+                        {destinations.map((outlet) => (
+                          <option key={outlet.id} value={outlet.id}>
+                            {outlet.name}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   )}
                 </div>
@@ -281,18 +319,12 @@ export function TransferPhotoPanel({
             </label>
           ))}
 
-          {!toOutletId ? (
-            <p className="text-sm font-semibold text-amber-800">
-              Choose the destination outlet above, then confirm.
-            </p>
-          ) : null}
-
           <Button
             type="button"
             onClick={() => void confirmPhotoTransfer()}
-            disabled={confirming || busy}
+            disabled={confirming || busy || destinations.length === 0}
           >
-            {confirming ? "Saving draft…" : "Confirm photo transfer"}
+            {confirming ? "Saving drafts…" : "Confirm photo transfer"}
           </Button>
         </div>
       ) : null}

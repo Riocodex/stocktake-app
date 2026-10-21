@@ -25,6 +25,17 @@ export function MoreScreen() {
         {user?.outletName ?? "All outlets"}
       </Text>
 
+      <Pressable style={styles.row} onPress={() => navigation.navigate("Dishes")}>
+        <Text style={styles.rowTitle}>Dishes</Text>
+        <Text style={styles.copy}>Browse prepared menu products</Text>
+      </Pressable>
+      <Pressable
+        style={styles.row}
+        onPress={() => navigation.navigate("CostAlerts")}
+      >
+        <Text style={styles.rowTitle}>Cost alerts</Text>
+        <Text style={styles.copy}>High food-cost dishes (group-wide)</Text>
+      </Pressable>
       <Pressable style={styles.row} onPress={() => navigation.navigate("Wastage")}>
         <Text style={styles.rowTitle}>Wastage</Text>
         <Text style={styles.copy}>Record spoiled, expired or damaged stock</Text>

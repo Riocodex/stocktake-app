@@ -33,6 +33,8 @@ type WastageRow = {
   itemName: string;
   outletName: string;
   recordedBy: string;
+  targetType?: string;
+  targetTypeLabel?: string;
 };
 
 type Payload = {
@@ -90,8 +92,8 @@ export function WastageScreen() {
       <Eyebrow>Stock & inventory</Eyebrow>
       <Text style={styles.title}>Wastage</Text>
       <Text style={styles.copy}>
-        Spoiled, expired or damaged stock leaves live inventory when you record
-        it.
+        Item wastage deducts stock. Dish wastage records financial loss only —
+        no recipe ingredients are deducted.
       </Text>
 
       {isSuper ? (
@@ -137,10 +139,17 @@ export function WastageScreen() {
               <Image source={{ uri: thumb }} style={styles.thumb} />
             ) : null}
             <Text style={styles.rowTitle}>{row.itemName}</Text>
-            <Badge tone="draft">{row.reasonLabel}</Badge>
+            <Badge tone="draft">
+              {row.targetTypeLabel
+                ? `${row.targetTypeLabel} · ${row.reasonLabel}`
+                : row.reasonLabel}
+            </Badge>
           </View>
           <Text style={styles.copy}>
-            {qty(row.quantity)} {row.unit} · {money(row.value)}
+            {qty(row.quantity)} {row.unit}
+            {row.targetType === "DISH" && row.quantity !== 1 ? "s" : ""} ·{" "}
+            {money(row.value)}
+            {row.targetType === "DISH" ? " loss" : ""}
           </Text>
           <Text style={styles.meta}>
             {formatWhen(row.createdAt)} · {row.recordedBy}

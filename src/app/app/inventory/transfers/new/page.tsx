@@ -61,8 +61,8 @@ export default async function NewTransferPage({
           New transfer
         </h1>
         <p className="mt-2 max-w-xl text-sm text-ink-muted">
-          Save a draft first. Stock only leaves the source outlet when you press
-          Send.
+          Send multiple products to different outlets in one go. Each
+          destination gets its own draft. Stock only moves when you press Send.
         </p>
       </header>
 

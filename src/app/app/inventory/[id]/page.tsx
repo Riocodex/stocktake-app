@@ -15,6 +15,7 @@ import {
   Th,
 } from "@/components/ui";
 import { ReceiveForm } from "./receive-form";
+import { ReferencePriceForm } from "./reference-price-form";
 
 export const metadata: Metadata = { title: "Product" };
 
@@ -129,9 +130,9 @@ export default async function InventoryItemPage({
         />
         <StatCard label="Stock value" value={formatMoney(totalValue)} tone="ink" />
         <StatCard
-          label="Average price"
-          value={formatMoney(averagePrice)}
-          hint={`Reference ${formatMoney(item.referencePrice)}`}
+          label="Group purchase price"
+          value={formatMoney(item.referencePrice)}
+          hint={`Outlet avg ${formatMoney(averagePrice)} (stock value only)`}
           tone="sage"
         />
         <StatCard
@@ -141,6 +142,16 @@ export default async function InventoryItemPage({
           tone="clay"
         />
       </section>
+
+      {superAdmin ? (
+        <Card>
+          <ReferencePriceForm
+            itemId={item.id}
+            currentPrice={item.referencePrice}
+            unit={item.unit}
+          />
+        </Card>
+      ) : null}
 
       {user.outletId ? (
         <Card>
@@ -175,7 +186,7 @@ export default async function InventoryItemPage({
                 <Th>Outlet</Th>
                 <Th className="text-right">On hand</Th>
                 <Th className="w-32">vs par</Th>
-                <Th>Unit price</Th>
+                <Th>Outlet unit price</Th>
                 <Th className="text-right">Value</Th>
                 <Th>Expiry</Th>
                 <Th>Last counted</Th>

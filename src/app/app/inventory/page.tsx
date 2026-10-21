@@ -167,8 +167,8 @@ export default async function InventoryPage({
             Inventory
           </h1>
           <p className="mt-2 max-w-xl text-sm text-ink-muted">
-            Catalogue, live quantities and prices. Record a delivery when a
-            supplier arrives; use a stock take to recount what is on the shelf.
+            Physical stock quantities and prices by outlet. Manage catalogue
+            Items and Dishes under Products &amp; Dishes.
           </p>
         </div>
 
@@ -209,7 +209,7 @@ export default async function InventoryPage({
           >
             History
           </ButtonLink>
-          <ButtonLink href="/app/inventory/new">Add product</ButtonLink>
+          <ButtonLink href="/app/products/new">Add product</ButtonLink>
         </div>
       </header>
 

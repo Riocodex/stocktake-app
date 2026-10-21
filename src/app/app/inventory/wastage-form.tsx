@@ -9,6 +9,7 @@ import {
 } from "@/lib/actions/wastage";
 import {
   WASTAGE_REASON_LABELS,
+  WASTAGE_TARGET,
   type WastageReason,
 } from "@/lib/constants";
 import { Button } from "@/components/ui";
@@ -25,33 +26,53 @@ type CatalogItem = {
   unitPrice: number;
 };
 
+type CatalogDish = {
+  id: string;
+  name: string;
+  category: string;
+  dishCost: number | null;
+  costingStatus: string;
+  costingStatusLabel: string;
+  canWaste: boolean;
+  blockReason: string | null;
+};
+
 export function WastageForm({
   outlets,
   items: initialItems,
+  dishes: initialDishes,
   fixedOutletId,
   fixedOutletName,
   recordPath,
   simulatedAi,
+  initialTarget = WASTAGE_TARGET.ITEM,
 }: {
   outlets: { id: string; name: string }[];
   items: CatalogItem[];
+  dishes: CatalogDish[];
   fixedOutletId: string | null;
   fixedOutletName: string | null;
   /** Path used to reload stock when the outlet changes, e.g. /app/inventory/wastage?record=1 */
   recordPath: string;
   simulatedAi: boolean;
+  initialTarget?: string;
 }) {
   const router = useRouter();
   const [state, formAction, pending] = useActionState(
     recordWastageAction,
     INITIAL,
   );
+  const [targetType, setTargetType] = useState(
+    initialTarget === WASTAGE_TARGET.DISH
+      ? WASTAGE_TARGET.DISH
+      : WASTAGE_TARGET.ITEM,
+  );
   const [items, setItems] = useState(initialItems);
   const [itemId, setItemId] = useState("");
+  const [dishId, setDishId] = useState("");
   const [quantity, setQuantity] = useState("");
   const [clientError, setClientError] = useState<string | null>(null);
 
-  // Keep local quantities in sync when the server re-renders after wastage.
   useEffect(() => {
     setItems(initialItems);
   }, [initialItems]);
@@ -67,18 +88,32 @@ export function WastageForm({
       );
       setQuantity("");
       router.refresh();
+    } else if (!state.error && state.message && state.targetType === WASTAGE_TARGET.DISH) {
+      setQuantity("");
+      router.refresh();
     }
   }, [state, router]);
 
-  const selected = useMemo(
+  const selectedItem = useMemo(
     () => items.find((item) => item.id === itemId) ?? null,
     [items, itemId],
   );
+  const selectedDish = useMemo(
+    () => initialDishes.find((dish) => dish.id === dishId) ?? null,
+    [initialDishes, dishId],
+  );
 
   const qty = Number(quantity);
-  const estimatedValue =
-    selected && Number.isFinite(qty) && qty > 0
-      ? Math.round(qty * selected.unitPrice * 100) / 100
+  const estimatedItemValue =
+    selectedItem && Number.isFinite(qty) && qty > 0
+      ? Math.round(qty * selectedItem.unitPrice * 100) / 100
+      : null;
+  const estimatedDishValue =
+    selectedDish &&
+    selectedDish.dishCost !== null &&
+    Number.isInteger(qty) &&
+    qty > 0
+      ? Math.round(qty * selectedDish.dishCost * 100) / 100
       : null;
 
   const availableItems = items.filter((item) => item.quantity > 0);
@@ -89,19 +124,50 @@ export function WastageForm({
     },
     {},
   );
+  const dishesByCategory = initialDishes.reduce<Record<string, CatalogDish[]>>(
+    (accumulator, dish) => {
+      (accumulator[dish.category] ??= []).push(dish);
+      return accumulator;
+    },
+    {},
+  );
 
   function onOutletChange(nextOutletId: string) {
     if (!nextOutletId) return;
     const url = new URL(recordPath, window.location.origin);
     url.searchParams.set("outlet", nextOutletId);
     url.searchParams.set("record", "1");
+    url.searchParams.set("kind", targetType === WASTAGE_TARGET.DISH ? "dish" : "item");
     router.push(`${url.pathname}?${url.searchParams.toString()}`);
   }
 
   function validateBeforeSubmit(formData: FormData) {
     setClientError(null);
-    const chosenId = String(formData.get("itemId") ?? "");
+    const kind = String(formData.get("targetType") ?? "");
     const chosenQty = Number(formData.get("quantity") ?? 0);
+
+    if (kind === WASTAGE_TARGET.DISH) {
+      const chosenId = String(formData.get("dishId") ?? "");
+      const chosen = initialDishes.find((dish) => dish.id === chosenId);
+      if (!chosen) {
+        setClientError("Choose which dish was wasted.");
+        return false;
+      }
+      if (!Number.isInteger(chosenQty) || chosenQty <= 0) {
+        setClientError("Quantity must be a whole number greater than zero.");
+        return false;
+      }
+      if (!chosen.canWaste) {
+        setClientError(
+          chosen.blockReason ??
+            "This dish cannot be costed yet — fix the recipe first.",
+        );
+        return false;
+      }
+      return true;
+    }
+
+    const chosenId = String(formData.get("itemId") ?? "");
     const chosen = items.find((item) => item.id === chosenId);
     if (!chosen) {
       setClientError("Choose which product was wasted.");
@@ -126,13 +192,12 @@ export function WastageForm({
     return true;
   }
 
-  // Super admin must pick an outlet before we can show truthful on-hand figures.
   if (!fixedOutletId) {
     return (
       <div className="space-y-4">
         <p className="text-sm text-ink-muted">
-          Choose an outlet first. On-hand quantities are always for one venue —
-          never a group total.
+          Choose an outlet first. On-hand quantities and dish loss are always
+          for one venue — never a group total for stock.
         </p>
         <div>
           <label htmlFor="outletId" className="eyebrow mb-2 block text-ink-muted">
@@ -167,6 +232,8 @@ export function WastageForm({
       className="space-y-5"
     >
       <input type="hidden" name="outletId" value={fixedOutletId} />
+      <input type="hidden" name="targetType" value={targetType} />
+
       <div className="rounded-2xl border border-sage-100 bg-sage-50/60 px-4 py-3">
         <p className="eyebrow text-sage-800">Recording at</p>
         <p className="mt-1 text-sm font-semibold text-ink">
@@ -188,55 +255,144 @@ export function WastageForm({
         ) : null}
       </div>
 
-      <WastagePhotoPanel outletId={fixedOutletId} simulated={simulatedAi} />
-
-      <p className="eyebrow text-ink-muted">Or record manually</p>
-
       <div>
-        <label htmlFor="itemId" className="eyebrow mb-2 block text-ink-muted">
-          Product
-        </label>
-        <select
-          id="itemId"
-          name="itemId"
-          required
-          value={itemId}
-          onChange={(event) => {
-            setItemId(event.target.value);
-            setClientError(null);
-          }}
-          className="w-full rounded-2xl border border-ink/15 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-clay"
-        >
-          <option value="">Choose…</option>
-          {Object.entries(grouped).map(([category, categoryItems]) => (
-            <optgroup key={category} label={category}>
-              {categoryItems.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name} · on hand {item.quantity} {item.unit}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
-        {availableItems.length === 0 ? (
-          <p className="mt-2 text-xs text-ink-muted">
-            No products currently have stock at this outlet.
-          </p>
-        ) : null}
+        <p className="eyebrow mb-2 block text-ink-muted">Wastage type</p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setTargetType(WASTAGE_TARGET.ITEM);
+              setClientError(null);
+            }}
+            className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+              targetType === WASTAGE_TARGET.ITEM
+                ? "bg-ink text-white"
+                : "bg-white text-ink border border-ink/15"
+            }`}
+          >
+            Item Wastage
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setTargetType(WASTAGE_TARGET.DISH);
+              setClientError(null);
+            }}
+            className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+              targetType === WASTAGE_TARGET.DISH
+                ? "bg-ink text-white"
+                : "bg-white text-ink border border-ink/15"
+            }`}
+          >
+            Dish Wastage
+          </button>
+        </div>
       </div>
+
+      {targetType === WASTAGE_TARGET.DISH ? (
+        <p className="rounded-2xl border border-clay/20 bg-cream/70 px-4 py-3 text-sm text-ink-soft">
+          Dish Wastage records financial loss only. No ingredients are deducted
+          from stock.
+        </p>
+      ) : (
+        <>
+          <WastagePhotoPanel outletId={fixedOutletId} simulated={simulatedAi} />
+          <p className="eyebrow text-ink-muted">Or record manually</p>
+        </>
+      )}
+
+      {targetType === WASTAGE_TARGET.ITEM ? (
+        <div>
+          <label htmlFor="itemId" className="eyebrow mb-2 block text-ink-muted">
+            Product
+          </label>
+          <select
+            id="itemId"
+            name="itemId"
+            required
+            value={itemId}
+            onChange={(event) => {
+              setItemId(event.target.value);
+              setClientError(null);
+            }}
+            className="w-full rounded-2xl border border-ink/15 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-clay"
+          >
+            <option value="">Choose…</option>
+            {Object.entries(grouped).map(([category, categoryItems]) => (
+              <optgroup key={category} label={category}>
+                {categoryItems.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name} · on hand {item.quantity} {item.unit}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+          {availableItems.length === 0 ? (
+            <p className="mt-2 text-xs text-ink-muted">
+              No products currently have stock at this outlet.
+            </p>
+          ) : null}
+        </div>
+      ) : (
+        <div>
+          <label htmlFor="dishId" className="eyebrow mb-2 block text-ink-muted">
+            Dish
+          </label>
+          <select
+            id="dishId"
+            name="dishId"
+            required
+            value={dishId}
+            onChange={(event) => {
+              setDishId(event.target.value);
+              setClientError(null);
+            }}
+            className="w-full rounded-2xl border border-ink/15 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-clay"
+          >
+            <option value="">Choose…</option>
+            {Object.entries(dishesByCategory).map(([category, categoryDishes]) => (
+              <optgroup key={category} label={category}>
+                {categoryDishes.map((dish) => (
+                  <option key={dish.id} value={dish.id}>
+                    {dish.name}
+                    {dish.dishCost !== null
+                      ? ` · €${dish.dishCost.toFixed(2)} / portion`
+                      : ` · ${dish.costingStatusLabel}`}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+          {selectedDish && !selectedDish.canWaste ? (
+            <p className="mt-2 text-xs text-red-700">
+              {selectedDish.blockReason}
+            </p>
+          ) : null}
+        </div>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <label htmlFor="quantity" className="eyebrow mb-2 block text-ink-muted">
-            Quantity{selected ? ` (${selected.unit})` : ""}
+            Quantity
+            {targetType === WASTAGE_TARGET.DISH
+              ? " (portions)"
+              : selectedItem
+                ? ` (${selectedItem.unit})`
+                : ""}
           </label>
           <input
             id="quantity"
             name="quantity"
             type="number"
-            min="0.01"
-            step="any"
-            max={selected?.quantity || undefined}
+            min={targetType === WASTAGE_TARGET.DISH ? "1" : "0.01"}
+            step={targetType === WASTAGE_TARGET.DISH ? "1" : "any"}
+            max={
+              targetType === WASTAGE_TARGET.ITEM
+                ? selectedItem?.quantity || undefined
+                : undefined
+            }
             required
             value={quantity}
             onChange={(event) => {
@@ -245,9 +401,9 @@ export function WastageForm({
             }}
             className="w-full rounded-2xl border border-ink/15 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-clay"
           />
-          {selected ? (
+          {targetType === WASTAGE_TARGET.ITEM && selectedItem ? (
             <p className="mt-1.5 text-xs text-ink-muted">
-              Current stock: {selected.quantity} {selected.unit}
+              Current stock: {selectedItem.quantity} {selectedItem.unit}
             </p>
           ) : null}
         </div>
@@ -285,24 +441,50 @@ export function WastageForm({
           id="note"
           name="note"
           rows={2}
-          placeholder="e.g. fridge failure overnight"
+          placeholder={
+            targetType === WASTAGE_TARGET.DISH
+              ? "e.g. overproduced batch for lunch service"
+              : "e.g. fridge failure overnight"
+          }
           className="w-full rounded-2xl border border-ink/15 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-clay"
         />
       </div>
 
-      {estimatedValue !== null ? (
+      {targetType === WASTAGE_TARGET.ITEM && estimatedItemValue !== null ? (
         <p className="rounded-2xl border border-ink/8 bg-cream/50 px-4 py-3 text-sm text-ink-soft">
           Estimated value:{" "}
           <span className="font-semibold text-ink">
-            €{estimatedValue.toFixed(2)}
+            €{estimatedItemValue.toFixed(2)}
           </span>
-          {selected ? (
+          {selectedItem ? (
             <span className="text-ink-muted">
               {" "}
-              · €{selected.unitPrice.toFixed(2)} / {selected.unit}
+              · €{selectedItem.unitPrice.toFixed(2)} / {selectedItem.unit}
             </span>
           ) : null}
         </p>
+      ) : null}
+
+      {targetType === WASTAGE_TARGET.DISH && selectedDish ? (
+        <div className="rounded-2xl border border-ink/8 bg-cream/50 px-4 py-3 text-sm text-ink-soft space-y-1">
+          <p>
+            Ingredient cost / dish:{" "}
+            <span className="font-semibold text-ink">
+              {selectedDish.dishCost !== null
+                ? `€${selectedDish.dishCost.toFixed(2)}`
+                : "—"}
+            </span>
+            <span className="text-ink-muted"> (group-wide)</span>
+          </p>
+          {estimatedDishValue !== null ? (
+            <p>
+              Total financial loss:{" "}
+              <span className="font-semibold text-ink">
+                €{estimatedDishValue.toFixed(2)}
+              </span>
+            </p>
+          ) : null}
+        </div>
       ) : null}
 
       {clientError || state.error ? (
@@ -323,9 +505,19 @@ export function WastageForm({
       <Button
         type="submit"
         size="lg"
-        disabled={pending || availableItems.length === 0}
+        disabled={
+          pending ||
+          (targetType === WASTAGE_TARGET.ITEM && availableItems.length === 0) ||
+          (targetType === WASTAGE_TARGET.DISH &&
+            (initialDishes.length === 0 ||
+              (selectedDish !== null && !selectedDish.canWaste)))
+        }
       >
-        {pending ? "Recording…" : "Record wastage"}
+        {pending
+          ? "Recording…"
+          : targetType === WASTAGE_TARGET.DISH
+            ? "Record dish wastage"
+            : "Record wastage"}
       </Button>
     </form>
   );

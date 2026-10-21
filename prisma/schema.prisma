@@ -108,6 +108,7 @@ model InventoryItem {
   wastage      Wastage[]
   transferLines TransferLine[]
   stockMovements StockMovement[]
+  recipeLines  DishIngredient[]
 
   @@index([categoryId])
   @@index([name])
@@ -289,17 +290,22 @@ model DeliveryLine {
   @@map("delivery_lines")
 }
 
-/// Recorded inventory wastage. Item-only for now; `targetType` allows dish wastage later.
+/// Recorded wastage. ITEM deducts OutletStock; DISH records financial loss only (Option B).
 model Wastage {
   id         String   @id @default(cuid())
   outletId   String
-  itemId     String
-  /// ITEM | DISH (dishes not implemented yet)
+  /// Set for ITEM wastage; null for DISH.
+  itemId     String?
+  /// Set for DISH wastage; null for ITEM.
+  dishId     String?
+  /// Snapshot of item/dish name at recording time (history stays readable if renamed).
+  targetName String?
+  /// ITEM | DISH
   targetType String   @default("ITEM")
   quantity   Float
-  /// Counting unit at time of wastage (from the catalogue item).
+  /// Item stock unit, or "portion" for dish wastage.
   unit       String
-  /// EUR cost per unit at time of wastage (outlet price snapshot for audit).
+  /// EUR cost per unit/portion snapshotted at recording time.
   unitCost   Float
   /// SPOILED | EXPIRED | DAMAGED | PREPARATION_WASTE | OVERPRODUCTION | STAFF_ERROR | OTHER
   reason     String
@@ -309,12 +315,15 @@ model Wastage {
   userId     String
   createdAt  DateTime @default(now())
 
-  outlet Outlet        @relation(fields: [outletId], references: [id], onDelete: Cascade)
-  item   InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  user   User          @relation(fields: [userId], references: [id])
+  outlet Outlet         @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  item   InventoryItem? @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  dish   Dish?          @relation(fields: [dishId], references: [id], onDelete: SetNull)
+  user   User           @relation(fields: [userId], references: [id])
 
   @@index([outletId, createdAt])
   @@index([itemId, createdAt])
+  @@index([dishId, createdAt])
+  @@index([targetType, createdAt])
   @@index([reason])
   @@map("wastage")
 }
@@ -371,6 +380,64 @@ model TransferLine {
   @@unique([transferId, itemId])
   @@index([itemId])
   @@map("transfer_lines")
+}
+
+/// Singleton-style app settings (one row, id = "default").
+model AppSettings {
+  id                      String   @id @default("default")
+  /// Food-cost % at/above this → Warning (below Critical).
+  foodCostWarningPercent  Float    @default(30)
+  /// Food-cost % at/above this → Critical.
+  foodCostCriticalPercent Float    @default(35)
+  updatedAt               DateTime @updatedAt
+
+  @@map("app_settings")
+}
+
+/// Prepared menu product made from physical Items (recipes come later).
+/// Never has OutletStock and never appears in stock takes / deliveries / transfers.
+model Dish {
+  id           String   @id @default(cuid())
+  name         String
+  /// Menu section label, e.g. Smoothies, Mains, Cocktails.
+  category     String
+  description  String?
+  imageUrl     String?
+  /// Selling / retail price in EUR.
+  sellingPrice Float    @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  ingredients DishIngredient[]
+  wastage     Wastage[]
+
+  @@index([category, name])
+  @@index([isActive, name])
+  @@index([name])
+  @@map("dishes")
+}
+
+/// One physical Item quantity required to prepare a single portion of a Dish.
+/// Quantities are stored in the recipe `unit`; convert to the item's stock unit
+/// via `src/lib/units.ts` for costing / availability (Steps 7 and 9).
+model DishIngredient {
+  id        String   @id @default(cuid())
+  dishId    String
+  itemId    String
+  /// Amount of the item needed for one dish portion, in `unit`.
+  quantity  Float
+  /// Recipe unit (may differ from InventoryItem.unit when convertible).
+  unit      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dish Dish          @relation(fields: [dishId], references: [id], onDelete: Cascade)
+  item InventoryItem @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  @@unique([dishId, itemId])
+  @@index([itemId])
+  @@map("dish_ingredients")
 }
 
 /// Append-only audit of physical inventory quantity changes (items only).

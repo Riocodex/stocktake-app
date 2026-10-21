@@ -40,6 +40,17 @@ type CatalogItem = {
   price: number;
 };
 
+type CatalogDish = {
+  id: string;
+  name: string;
+  category: string;
+  costing: {
+    status: string;
+    statusLabel: string;
+    dishCost: number | null;
+  } | null;
+};
+
 type Reason = { id: string; label: string };
 
 const FALLBACK_REASONS: Reason[] = [
@@ -56,10 +67,13 @@ export function RecordWastageScreen() {
   const { token, user } = useAuth();
   const { outletId, setOutletId, outlets, isSuper } = useScope();
   const navigation = useNavigation();
+  const [targetType, setTargetType] = useState<"ITEM" | "DISH">("ITEM");
   const [items, setItems] = useState<CatalogItem[]>([]);
+  const [dishes, setDishes] = useState<CatalogDish[]>([]);
   const [reasons, setReasons] = useState<Reason[]>(FALLBACK_REASONS);
   const [search, setSearch] = useState("");
   const [itemId, setItemId] = useState("");
+  const [dishId, setDishId] = useState("");
   const [quantity, setQuantity] = useState("");
   const [reason, setReason] = useState("");
   const [note, setNote] = useState("");
@@ -94,9 +108,25 @@ export function RecordWastageScreen() {
     setItems(data.items);
   }, [token, effectiveOutletId]);
 
+  const loadDishes = useCallback(async () => {
+    if (!token) {
+      setDishes([]);
+      return;
+    }
+    const data = await api.get<{ dishes: CatalogDish[] }>(
+      "/api/mobile/dishes?active=active",
+      token,
+    );
+    setDishes(data.dishes);
+  }, [token]);
+
   useEffect(() => {
     loadItems().catch(() => setItems([]));
   }, [loadItems]);
+
+  useEffect(() => {
+    loadDishes().catch(() => setDishes([]));
+  }, [loadDishes]);
 
   useEffect(() => {
     if (!token) return;
@@ -111,6 +141,7 @@ export function RecordWastageScreen() {
   // Clear selected product when the outlet changes so we never keep a stale qty.
   useEffect(() => {
     setItemId("");
+    setDishId("");
     setQuantity("");
     setPhotoSuggestions([]);
     setPhotoPreview(null);
@@ -241,6 +272,10 @@ export function RecordWastageScreen() {
     () => items.find((item) => item.id === itemId) ?? null,
     [items, itemId],
   );
+  const selectedDish = useMemo(
+    () => dishes.find((dish) => dish.id === dishId) ?? null,
+    [dishes, dishId],
+  );
 
   const filtered = useMemo(() => {
     const inStock = items.filter((item) => item.quantity > 0);
@@ -256,11 +291,28 @@ export function RecordWastageScreen() {
       .slice(0, 40);
   }, [items, search]);
 
+  const filteredDishes = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    const list = dishes.filter((dish) => {
+      if (!needle) return true;
+      return (
+        dish.name.toLowerCase().includes(needle) ||
+        dish.category.toLowerCase().includes(needle)
+      );
+    });
+    return list.slice(0, 40);
+  }, [dishes, search]);
+
   const qtyNum = Number(quantity);
   const estimate =
-    selected && Number.isFinite(qtyNum) && qtyNum > 0
+    targetType === "ITEM" && selected && Number.isFinite(qtyNum) && qtyNum > 0
       ? Math.round(qtyNum * selected.price * 100) / 100
-      : null;
+      : targetType === "DISH" &&
+          selectedDish?.costing?.dishCost != null &&
+          Number.isInteger(qtyNum) &&
+          qtyNum > 0
+        ? Math.round(qtyNum * selectedDish.costing.dishCost * 100) / 100
+        : null;
 
   async function save() {
     if (!token) return;
@@ -268,6 +320,64 @@ export function RecordWastageScreen() {
       Alert.alert("Choose an outlet", "Pick which venue this wastage is for.");
       return;
     }
+
+    if (targetType === "DISH") {
+      if (!selectedDish) {
+        Alert.alert("Choose a dish", "Pick which dish was wasted.");
+        return;
+      }
+      if (!Number.isInteger(qtyNum) || qtyNum <= 0) {
+        Alert.alert(
+          "Invalid quantity",
+          "Quantity must be a whole number greater than zero.",
+        );
+        return;
+      }
+      if (
+        selectedDish.costing?.status !== "COMPLETE" ||
+        selectedDish.costing.dishCost == null
+      ) {
+        Alert.alert(
+          "Cannot cost dish",
+          selectedDish.costing?.statusLabel ??
+            "Fix the recipe or missing prices first.",
+        );
+        return;
+      }
+      if (!reason) {
+        Alert.alert("Choose a reason", "Pick why this dish was wasted.");
+        return;
+      }
+
+      setPending(true);
+      try {
+        const result = await api.post<{
+          ok: boolean;
+          wastage: { value: number; dishName: string; quantity: number };
+        }>("/api/mobile/wastage", token, {
+          outletId: effectiveOutletId,
+          targetType: "DISH",
+          dishId,
+          quantity: qtyNum,
+          reason,
+          note: note || undefined,
+        });
+        Alert.alert(
+          "Recorded",
+          `Financial loss ${money(result.wastage.value)}. No ingredients deducted from stock.`,
+        );
+        navigation.goBack();
+      } catch (caught) {
+        Alert.alert(
+          "Could not record",
+          caught instanceof ApiError ? caught.message : "",
+        );
+      } finally {
+        setPending(false);
+      }
+      return;
+    }
+
     if (!selected) {
       Alert.alert("Choose a product", "Pick which product was wasted.");
       return;
@@ -298,6 +408,7 @@ export function RecordWastageScreen() {
         wastage: { remainingQuantity: number };
       }>("/api/mobile/wastage", token, {
         outletId: effectiveOutletId,
+        targetType: "ITEM",
         itemId,
         quantity: qtyNum,
         reason,
@@ -338,18 +449,149 @@ export function RecordWastageScreen() {
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <Text style={styles.title}>Record wastage</Text>
       <Text style={styles.copy}>
-        On-hand figures are for one outlet only. Quantity must not exceed what
-        is currently on hand.
+        Item wastage deducts stock. Dish wastage records financial loss only —
+        no ingredients are deducted.
       </Text>
 
       {isSuper ? (
         <OutletPicker outlets={outlets} value={outletId} onChange={setOutletId} />
       ) : null}
 
+      <Text style={styles.label}>Wastage type</Text>
+      <View style={styles.photoActions}>
+        <Pressable
+          style={[
+            styles.secondary,
+            targetType === "ITEM" ? styles.chipActive : null,
+          ]}
+          onPress={() => setTargetType("ITEM")}
+        >
+          <Text
+            style={[
+              styles.secondaryText,
+              targetType === "ITEM" ? styles.chipTextActive : null,
+            ]}
+          >
+            Item
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[
+            styles.secondary,
+            targetType === "DISH" ? styles.chipActive : null,
+          ]}
+          onPress={() => setTargetType("DISH")}
+        >
+          <Text
+            style={[
+              styles.secondaryText,
+              targetType === "DISH" ? styles.chipTextActive : null,
+            ]}
+          >
+            Dish
+          </Text>
+        </Pressable>
+      </View>
+
       {!effectiveOutletId ? (
         <Text style={styles.copy}>
           Choose an outlet above to load that venue&apos;s live stock.
         </Text>
+      ) : targetType === "DISH" ? (
+        <>
+          <Text style={styles.warn}>
+            Dish Wastage records financial loss only. No ingredients are
+            deducted from stock.
+          </Text>
+          <Text style={styles.label}>Search dishes</Text>
+          <TextInput
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Name or category"
+            placeholderTextColor={colors.muted}
+            style={styles.input}
+          />
+          <Text style={styles.label}>Dish</Text>
+          {filteredDishes.map((dish) => {
+            const costOk =
+              dish.costing?.status === "COMPLETE" &&
+              dish.costing.dishCost != null;
+            return (
+              <Pressable
+                key={dish.id}
+                style={[
+                  styles.option,
+                  dishId === dish.id ? styles.optionActive : null,
+                  !costOk ? { opacity: 0.55 } : null,
+                ]}
+                onPress={() => costOk && setDishId(dish.id)}
+              >
+                <Text style={styles.optionTitle}>{dish.name}</Text>
+                <Text style={styles.copy}>
+                  {dish.category}
+                  {costOk
+                    ? ` · ${money(dish.costing!.dishCost!)} / portion`
+                    : ` · ${dish.costing?.statusLabel ?? "No cost"}`}
+                </Text>
+              </Pressable>
+            );
+          })}
+          {selectedDish ? (
+            <Text style={styles.copy}>
+              Ingredient cost:{" "}
+              {selectedDish.costing?.dishCost != null
+                ? money(selectedDish.costing.dishCost)
+                : "—"}{" "}
+              (group-wide)
+              {estimate != null ? ` · Total loss ${money(estimate)}` : ""}
+            </Text>
+          ) : null}
+          <Text style={styles.label}>Portions wasted</Text>
+          <TextInput
+            value={quantity}
+            onChangeText={setQuantity}
+            keyboardType="number-pad"
+            placeholder="Whole number"
+            placeholderTextColor={colors.muted}
+            style={styles.input}
+          />
+          <Text style={styles.label}>Reason</Text>
+          <View style={styles.reasons}>
+            {reasons.map((row) => (
+              <Pressable
+                key={row.id}
+                style={[
+                  styles.chip,
+                  reason === row.id ? styles.chipActive : null,
+                ]}
+                onPress={() => setReason(row.id)}
+              >
+                <Text
+                  style={[
+                    styles.chipText,
+                    reason === row.id ? styles.chipTextActive : null,
+                  ]}
+                >
+                  {row.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          <Text style={styles.label}>Note (optional)</Text>
+          <TextInput
+            value={note}
+            onChangeText={setNote}
+            placeholder="Optional detail"
+            placeholderTextColor={colors.muted}
+            style={[styles.input, { minHeight: 72 }]}
+            multiline
+          />
+          <PrimaryButton
+            label={pending ? "Recording…" : "Record dish wastage"}
+            onPress={() => void save()}
+            disabled={pending}
+          />
+        </>
       ) : (
         <>
           <Text style={styles.label}>Photo wastage</Text>

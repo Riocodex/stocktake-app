@@ -63,6 +63,14 @@ export function formatPercent(value: number) {
   return `${rounded > 0 ? "+" : ""}${decimal.format(rounded)}%`;
 }
 
+/** Food-cost / margin display — no leading plus, dash when unavailable. */
+export function formatCostPercent(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return "—";
+  }
+  return `${decimal.format(value)}%`;
+}
+
 export function formatSigned(value: number) {
   return `${value > 0 ? "+" : ""}${decimal.format(value)}`;
 }

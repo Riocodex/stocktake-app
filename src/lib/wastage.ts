@@ -1,24 +1,39 @@
-import "server-only";
-
 import {
-  assertOutletAccess,
-  isSuperAdmin,
-  type SessionUser,
-} from "@/lib/auth";
-import { analyseStockPhoto, isAiConfigured } from "@/lib/ai";
-import {
+  DISH_WASTAGE_UNIT,
+  ROLES,
   STOCK_MOVEMENT_REFERENCE,
   STOCK_MOVEMENT_TYPE,
   WASTAGE_REASON_LABELS,
   WASTAGE_TARGET,
+  WASTAGE_TARGET_LABELS,
   isWastageReason,
   type WastageReason,
+  type WastageTarget,
 } from "@/lib/constants";
+import { calculateDishCost } from "@/lib/dish-costing";
 import { prisma } from "@/lib/db";
 import { formatMoney, formatQty } from "@/lib/format";
 import { matchDetectedItem } from "@/lib/matching";
-import { getCatalogueForOutlet } from "@/lib/stock";
+import { multiplyMoney, roundEuros } from "@/lib/money";
 import { createStockMovement } from "@/lib/stock-movements";
+
+/** Minimal actor shape — avoids importing auth (server-only) into scripts. */
+export type WastageActor = {
+  id: string;
+  role: string;
+  outletId: string | null;
+};
+
+function isSuperAdmin(user: WastageActor) {
+  return user.role === ROLES.SUPER_ADMIN;
+}
+
+function assertOutletAccess(user: WastageActor, outletId: string) {
+  if (isSuperAdmin(user)) return;
+  if (user.outletId !== outletId) {
+    throw new Error("You do not have access to this outlet.");
+  }
+}
 
 export type RecordWastageInput = {
   outletId?: string | null;
@@ -50,7 +65,7 @@ export type RecordWastageResult =
  * Unit cost is snapshotted so history stays accurate if prices change later.
  */
 export async function recordItemWastage(
-  user: SessionUser,
+  user: WastageActor,
   input: RecordWastageInput,
 ): Promise<RecordWastageResult> {
   const requestedOutlet = String(input.outletId ?? "").trim();
@@ -163,6 +178,8 @@ export async function recordItemWastage(
         data: {
           outletId,
           itemId,
+          dishId: null,
+          targetName: item.name,
           targetType: WASTAGE_TARGET.ITEM,
           quantity: roundedQty,
           unit: item.unit,
@@ -226,9 +243,208 @@ export async function recordItemWastage(
   }
 }
 
+export type RecordDishWastageInput = {
+  outletId?: string | null;
+  dishId: string;
+  quantity: number;
+  reason: string;
+  note?: string | null;
+};
+
+export type RecordDishWastageResult =
+  | {
+      ok: true;
+      wastage: {
+        id: string;
+        dishId: string;
+        dishName: string;
+        quantity: number;
+        unit: string;
+        unitCost: number;
+        value: number;
+        reason: WastageReason;
+        outletId: string;
+      };
+    }
+  | { ok: false; error: string };
+
+function resolveWastageOutletId(
+  user: WastageActor,
+  requestedRaw: string | null | undefined,
+): { ok: true; outletId: string } | { ok: false; error: string } {
+  const requestedOutlet = String(requestedRaw ?? "").trim();
+  const outletId = isSuperAdmin(user) ? requestedOutlet : user.outletId;
+
+  if (!outletId) {
+    return { ok: false, error: "Choose which outlet this wastage is for." };
+  }
+
+  if (
+    !isSuperAdmin(user) &&
+    requestedOutlet &&
+    requestedOutlet !== user.outletId
+  ) {
+    return { ok: false, error: "You do not have access to that outlet." };
+  }
+
+  try {
+    assertOutletAccess(user, outletId);
+  } catch {
+    return { ok: false, error: "You do not have access to that outlet." };
+  }
+
+  return { ok: true, outletId };
+}
+
+/**
+ * Records prepared-dish wastage as financial loss only (Option B).
+ * Does NOT change OutletStock, create StockMovement, or deduct recipe ingredients.
+ * Unit cost is the current complete group-wide dish ingredient cost, snapshotted.
+ */
+export async function recordDishWastage(
+  user: WastageActor,
+  input: RecordDishWastageInput,
+): Promise<RecordDishWastageResult> {
+  const scoped = resolveWastageOutletId(user, input.outletId);
+  if (!scoped.ok) return scoped;
+
+  const dishId = String(input.dishId ?? "").trim();
+  const note = String(input.note ?? "").trim();
+  const quantityRaw = Number(input.quantity);
+  const reasonRaw = String(input.reason ?? "").trim();
+
+  if (!dishId) return { ok: false, error: "Choose which dish was wasted." };
+
+  // Whole portions only — prepared dishes are counted as integers.
+  if (
+    !Number.isFinite(quantityRaw) ||
+    !Number.isInteger(quantityRaw) ||
+    quantityRaw <= 0
+  ) {
+    return {
+      ok: false,
+      error: "Quantity must be a whole number greater than zero.",
+    };
+  }
+  const quantity = quantityRaw;
+
+  if (!isWastageReason(reasonRaw)) {
+    return { ok: false, error: "Choose a wastage reason." };
+  }
+  const reason: WastageReason = reasonRaw;
+
+  const costResult = await calculateDishCost(user, dishId);
+  if (!costResult.ok) {
+    return { ok: false, error: costResult.error };
+  }
+  const cost = costResult.cost;
+
+  if (cost.status === "NO_RECIPE") {
+    return {
+      ok: false,
+      error:
+        "This dish has no recipe. Add ingredients before recording dish wastage.",
+    };
+  }
+  if (cost.status === "INCOMPLETE" || cost.dishCost === null) {
+    const issues = cost.ingredients
+      .filter((line) => line.issue)
+      .map((line) => `${line.itemName}: ${line.issue}`)
+      .slice(0, 3);
+    return {
+      ok: false,
+      error:
+        issues.length > 0
+          ? `Cannot cost this dish. ${issues.join(" ")}`
+          : "Cannot cost this dish — fix the recipe or missing ingredient prices first.",
+    };
+  }
+
+  const unitCost = roundEuros(cost.dishCost);
+  if (!(unitCost > 0)) {
+    return {
+      ok: false,
+      error:
+        "Dish ingredient cost must be greater than zero before recording wastage.",
+    };
+  }
+
+  const value = multiplyMoney(quantity, unitCost);
+
+  try {
+    const wastage = await prisma.$transaction(async (tx) => {
+      const outlet = await tx.outlet.findUnique({
+        where: { id: scoped.outletId },
+        select: { id: true, name: true, isActive: true },
+      });
+      if (!outlet || !outlet.isActive) {
+        throw new Error("That outlet no longer exists.");
+      }
+
+      const dish = await tx.dish.findUnique({
+        where: { id: dishId },
+        select: { id: true, name: true, isActive: true },
+      });
+      if (!dish) throw new Error("Dish not found.");
+      if (!dish.isActive) {
+        throw new Error("That dish is inactive and cannot be recorded as wastage.");
+      }
+
+      const created = await tx.wastage.create({
+        data: {
+          outletId: scoped.outletId,
+          itemId: null,
+          dishId: dish.id,
+          targetName: dish.name,
+          targetType: WASTAGE_TARGET.DISH,
+          quantity,
+          unit: DISH_WASTAGE_UNIT,
+          unitCost,
+          reason,
+          note: note || null,
+          imageUrl: null,
+          userId: user.id,
+        },
+      });
+
+      await tx.activityLog.create({
+        data: {
+          userId: user.id,
+          outletId: scoped.outletId,
+          action: "DISH_WASTAGE_RECORDED",
+          detail: `${dish.name} · ${quantity} ${DISH_WASTAGE_UNIT}${quantity === 1 ? "" : "s"} · ${WASTAGE_REASON_LABELS[reason]} · ${formatMoney(value)} (financial loss only — no stock deducted)`,
+        },
+      });
+
+      return {
+        id: created.id,
+        dishId: dish.id,
+        dishName: dish.name,
+        quantity: created.quantity,
+        unit: created.unit,
+        unitCost: created.unitCost,
+        value,
+        reason,
+        outletId: scoped.outletId,
+      };
+    });
+
+    return { ok: true, wastage };
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error ? error.message : "Could not record dish wastage.",
+    };
+  }
+}
+
 export type WastageListFilters = {
   outletId?: string | null;
   itemId?: string | null;
+  dishId?: string | null;
+  /** ITEM | DISH | all (default) */
+  targetType?: string | null;
   reason?: string | null;
   q?: string | null;
   from?: string | null;
@@ -237,7 +453,7 @@ export type WastageListFilters = {
 };
 
 export async function listWastage(
-  user: SessionUser,
+  user: WastageActor,
   filters: WastageListFilters = {},
 ) {
   const scopeOutlet = isSuperAdmin(user)
@@ -262,14 +478,21 @@ export async function listWastage(
   const reason =
     filters.reason && isWastageReason(filters.reason) ? filters.reason : null;
   const itemId = (filters.itemId ?? "").trim() || null;
+  const dishId = (filters.dishId ?? "").trim() || null;
+  const targetFilter =
+    filters.targetType === WASTAGE_TARGET.ITEM ||
+    filters.targetType === WASTAGE_TARGET.DISH
+      ? filters.targetType
+      : null;
 
   const fromDate = parseDayStart(filters.from);
   const toDate = parseDayEnd(filters.to);
 
   const where = {
-    targetType: WASTAGE_TARGET.ITEM,
+    ...(targetFilter ? { targetType: targetFilter } : {}),
     ...(scopeOutlet ? { outletId: scopeOutlet } : {}),
     ...(itemId ? { itemId } : {}),
+    ...(dishId ? { dishId } : {}),
     ...(reason ? { reason } : {}),
     ...(fromDate || toDate
       ? {
@@ -282,9 +505,11 @@ export async function listWastage(
     ...(search
       ? {
           OR: [
+            { targetName: { contains: search } },
             { item: { name: { contains: search } } },
             { item: { sku: { contains: search } } },
             { item: { brand: { contains: search } } },
+            { dish: { name: { contains: search } } },
             { note: { contains: search } },
           ],
         }
@@ -296,6 +521,7 @@ export async function listWastage(
       where,
       include: {
         item: { select: { id: true, name: true, brand: true, sku: true } },
+        dish: { select: { id: true, name: true } },
         outlet: { select: { id: true, name: true } },
         user: { select: { id: true, name: true } },
       },
@@ -304,7 +530,6 @@ export async function listWastage(
     }),
     prisma.wastage.findMany({
       where: {
-        targetType: WASTAGE_TARGET.ITEM,
         ...(scopeOutlet ? { outletId: scopeOutlet } : {}),
         createdAt: { gte: startOfLocalDay() },
       },
@@ -312,52 +537,84 @@ export async function listWastage(
         quantity: true,
         unitCost: true,
         itemId: true,
+        dishId: true,
+        targetType: true,
+        targetName: true,
         item: { select: { name: true, brand: true } },
+        dish: { select: { name: true } },
       },
     }),
   ]);
 
   const todayValue = todayRows.reduce(
-    (sum, row) => sum + row.quantity * row.unitCost,
+    (sum, row) => sum + multiplyMoney(row.quantity, row.unitCost),
     0,
   );
-  const itemTotals = new Map<string, { name: string; qty: number }>();
+  const nameTotals = new Map<string, { name: string; qty: number }>();
   for (const row of todayRows) {
-    const name = row.item.brand
-      ? `${row.item.brand} ${row.item.name}`
-      : row.item.name;
-    const existing = itemTotals.get(row.itemId) ?? { name, qty: 0 };
+    const key =
+      row.targetType === WASTAGE_TARGET.DISH
+        ? `dish:${row.dishId ?? row.targetName ?? "unknown"}`
+        : `item:${row.itemId ?? row.targetName ?? "unknown"}`;
+    const name =
+      row.targetName ||
+      (row.targetType === WASTAGE_TARGET.DISH
+        ? row.dish?.name
+        : row.item
+          ? row.item.brand
+            ? `${row.item.brand} ${row.item.name}`
+            : row.item.name
+          : null) ||
+      "Unknown";
+    const existing = nameTotals.get(key) ?? { name, qty: 0 };
     existing.qty += row.quantity;
-    itemTotals.set(row.itemId, existing);
+    nameTotals.set(key, existing);
   }
   let mostWasted: { name: string; qty: number } | null = null;
-  for (const entry of itemTotals.values()) {
+  for (const entry of nameTotals.values()) {
     if (!mostWasted || entry.qty > mostWasted.qty) mostWasted = entry;
   }
 
   return {
-    rows: rows.map((row) => ({
-      id: row.id,
-      createdAt: row.createdAt,
-      quantity: row.quantity,
-      unit: row.unit,
-      unitCost: row.unitCost,
-      value: Math.round(row.quantity * row.unitCost * 100) / 100,
-      reason: row.reason as WastageReason,
-      reasonLabel: WASTAGE_REASON_LABELS[row.reason as WastageReason] ?? row.reason,
-      note: row.note,
-      imageUrl: row.imageUrl,
-      itemId: row.item.id,
-      itemName: row.item.brand
-        ? `${row.item.brand} ${row.item.name}`
-        : row.item.name,
-      itemSku: row.item.sku,
-      outletId: row.outlet.id,
-      outletName: row.outlet.name,
-      recordedBy: row.user.name,
-    })),
+    rows: rows.map((row) => {
+      const targetType = (row.targetType === WASTAGE_TARGET.DISH
+        ? WASTAGE_TARGET.DISH
+        : WASTAGE_TARGET.ITEM) as WastageTarget;
+      const displayName =
+        row.targetName ||
+        (targetType === WASTAGE_TARGET.DISH
+          ? row.dish?.name
+          : row.item
+            ? row.item.brand
+              ? `${row.item.brand} ${row.item.name}`
+              : row.item.name
+            : null) ||
+        "Unknown";
+      return {
+        id: row.id,
+        createdAt: row.createdAt,
+        quantity: row.quantity,
+        unit: row.unit,
+        unitCost: row.unitCost,
+        value: multiplyMoney(row.quantity, row.unitCost),
+        reason: row.reason as WastageReason,
+        reasonLabel:
+          WASTAGE_REASON_LABELS[row.reason as WastageReason] ?? row.reason,
+        note: row.note,
+        imageUrl: row.imageUrl,
+        targetType,
+        targetTypeLabel: WASTAGE_TARGET_LABELS[targetType],
+        itemId: row.item?.id ?? null,
+        dishId: row.dish?.id ?? row.dishId ?? null,
+        itemName: displayName,
+        itemSku: row.item?.sku ?? null,
+        outletId: row.outlet.id,
+        outletName: row.outlet.name,
+        recordedBy: row.user.name,
+      };
+    }),
     summary: {
-      todayValue: Math.round(todayValue * 100) / 100,
+      todayValue: roundEuros(todayValue),
       todayCount: todayRows.length,
       mostWastedName: mostWasted?.name ?? null,
     },
@@ -389,7 +646,7 @@ export type WastagePhotoSuggestion = {
  * Does NOT change stock — the user must confirm suggestions first.
  */
 export async function analyzeWastagePhoto(
-  user: SessionUser,
+  user: WastageActor,
   input: {
     outletId?: string | null;
     bytes: Uint8Array;
@@ -415,12 +672,16 @@ export async function analyzeWastagePhoto(
     return { ok: false as const, error: "You do not have access to that outlet." };
   }
 
+  const { getCatalogueForOutlet } = await import("@/lib/stock");
   const catalogue = await getCatalogueForOutlet(outletId);
+  // Lazy-load AI so wastage core stays usable from Node test scripts.
+  const { analyseStockPhoto, isAiConfigured } = await import("@/lib/ai");
   const analysis = await analyseStockPhoto(
     input.bytes,
     input.mimeType || "image/jpeg",
     catalogue,
   );
+  const simulated = !isAiConfigured();
 
   const candidates = catalogue.map((entry) => ({
     id: entry.id,
@@ -498,7 +759,7 @@ export async function analyzeWastagePhoto(
     ok: true as const,
     imageUrl: input.imageUrl,
     provider: analysis.provider,
-    simulated: !isAiConfigured(),
+    simulated,
     detected: analysis.items.length,
     matched: suggestions.length,
     unmatched,

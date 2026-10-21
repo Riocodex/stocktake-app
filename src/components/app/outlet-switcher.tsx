@@ -13,10 +13,15 @@ export function OutletSwitcher({
   outlets,
   value,
   allLabel = "All outlets",
+  allowAll = true,
+  placeholderLabel = "Choose outlet…",
 }: {
   outlets: Option[];
   value: string | null;
   allLabel?: string;
+  /** When false, super-admin must pick a concrete outlet (e.g. dish availability). */
+  allowAll?: boolean;
+  placeholderLabel?: string;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -25,7 +30,7 @@ export function OutletSwitcher({
 
   function handleChange(next: string) {
     const params = new URLSearchParams(searchParams.toString());
-    if (next === "all") {
+    if (next === "all" || next === "") {
       params.delete("outlet");
     } else {
       params.set("outlet", next);
@@ -39,16 +44,24 @@ export function OutletSwitcher({
     });
   }
 
+  const selectValue = value ?? (allowAll ? "all" : "");
+
   return (
     <label className="relative inline-flex items-center gap-2">
       <span className="sr-only">Filter by outlet</span>
       <select
-        value={value ?? "all"}
+        value={selectValue}
         onChange={(event) => handleChange(event.target.value)}
         disabled={pending}
         className="appearance-none rounded-pill border border-ink/15 bg-white py-2 pr-9 pl-4 text-sm font-semibold text-ink outline-none transition hover:border-clay focus:border-clay disabled:opacity-60"
       >
-        <option value="all">{allLabel}</option>
+        {allowAll ? (
+          <option value="all">{allLabel}</option>
+        ) : (
+          <option value="" disabled>
+            {placeholderLabel}
+          </option>
+        )}
         {outlets.map((outlet) => (
           <option key={outlet.id} value={outlet.id}>
             {outlet.name}

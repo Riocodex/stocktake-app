@@ -4,7 +4,16 @@ export type RootStackParamList = {
   Take: { id: string };
   NewTake: undefined;
   Product: { id: string };
+  AddProduct: undefined;
+  NewItem: undefined;
+  /** @deprecated use AddProduct / NewItem */
   NewProduct: undefined;
+  Dishes: undefined;
+  CostAlerts: undefined;
+  Dish: { id: string };
+  DishRecipe: { id: string };
+  NewDish: undefined;
+  EditDish: { id: string };
   Delivery: undefined;
   Wastage: undefined;
   RecordWastage: undefined;

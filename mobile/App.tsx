@@ -27,6 +27,15 @@ import { TransfersScreen } from "./src/screens/TransfersScreen";
 import { NewTransferScreen } from "./src/screens/NewTransferScreen";
 import { TransferDetailScreen } from "./src/screens/TransferDetailScreen";
 import { StockHistoryScreen } from "./src/screens/StockHistoryScreen";
+import { AddProductChooserScreen } from "./src/screens/AddProductChooserScreen";
+import { DishesScreen } from "./src/screens/DishesScreen";
+import { CostAlertsScreen } from "./src/screens/CostAlertsScreen";
+import { DishDetailScreen } from "./src/screens/DishDetailScreen";
+import { DishRecipeScreen } from "./src/screens/DishRecipeScreen";
+import {
+  EditDishScreen,
+  NewDishScreen,
+} from "./src/screens/DishFormScreen";
 import { colors } from "./src/theme";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -122,14 +131,54 @@ function Root() {
               options={{ title: "Stock take" }}
             />
             <Stack.Screen
+              name="AddProduct"
+              component={AddProductChooserScreen}
+              options={{ title: "Add product" }}
+            />
+            <Stack.Screen
+              name="NewItem"
+              component={NewProductScreen}
+              options={{ title: "Add item" }}
+            />
+            <Stack.Screen
               name="NewProduct"
               component={NewProductScreen}
-              options={{ title: "Add product" }}
+              options={{ title: "Add item" }}
             />
             <Stack.Screen
               name="Product"
               component={ProductScreen}
               options={{ title: "Product" }}
+            />
+            <Stack.Screen
+              name="Dishes"
+              component={DishesScreen}
+              options={{ title: "Dishes" }}
+            />
+            <Stack.Screen
+              name="CostAlerts"
+              component={CostAlertsScreen}
+              options={{ title: "Cost alerts" }}
+            />
+            <Stack.Screen
+              name="Dish"
+              component={DishDetailScreen}
+              options={{ title: "Dish" }}
+            />
+            <Stack.Screen
+              name="DishRecipe"
+              component={DishRecipeScreen}
+              options={{ title: "Recipe" }}
+            />
+            <Stack.Screen
+              name="NewDish"
+              component={NewDishScreen}
+              options={{ title: "Add dish" }}
+            />
+            <Stack.Screen
+              name="EditDish"
+              component={EditDishScreen}
+              options={{ title: "Edit dish" }}
             />
             <Stack.Screen
               name="Delivery"
