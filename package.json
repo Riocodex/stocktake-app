@@ -19,7 +19,8 @@
     "test:costing": "tsx scripts/test-dish-costing.ts",
     "test:alerts": "tsx scripts/test-cost-alerts.ts",
     "test:availability": "tsx scripts/test-dish-availability.ts",
-    "test:dish-wastage": "tsx scripts/test-dish-wastage.ts"
+    "test:dish-wastage": "tsx scripts/test-dish-wastage.ts",
+    "test:ordering": "tsx scripts/test-ordering.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

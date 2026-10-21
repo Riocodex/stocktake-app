@@ -8,13 +8,15 @@ import {
   View,
 } from "react-native";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { CompositeNavigationProp } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, money, qty, withQuery } from "../api";
 import { useAuth } from "../auth";
 import { formatWhen } from "../format";
-import type { RootStackParamList } from "../navigation";
+import type { MainTabParamList, RootStackParamList } from "../navigation";
 import { useScope } from "../scope";
 import { colors } from "../theme";
 import {
@@ -73,7 +75,12 @@ export function HomeScreen() {
   const { token, user } = useAuth();
   const { outletId, setOutletId, outlets, isSuper } = useScope();
   const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    useNavigation<
+      CompositeNavigationProp<
+        BottomTabNavigationProp<MainTabParamList, "Home">,
+        NativeStackNavigationProp<RootStackParamList>
+      >
+    >();
   const [data, setData] = useState<HomePayload | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -123,13 +130,33 @@ export function HomeScreen() {
       ) : null}
 
       <View style={styles.stats}>
-        <StatCard label="On hand" value={money(data?.summary.value ?? 0)} />
-        <StatCard label="Needs reorder" value={String(data?.summary.lowCount ?? 0)} />
+        <StatCard
+          label="On hand"
+          value={money(data?.summary.value ?? 0)}
+          onPress={() => navigation.navigate("Inventory")}
+        />
+        <StatCard
+          label="Needs reorder"
+          value={String(data?.summary.lowCount ?? 0)}
+          onPress={() => navigation.navigate("Inventory", { lowOnly: true })}
+        />
       </View>
       <View style={styles.stats}>
-        <StatCard label="Open counts" value={String(data?.summary.draftCount ?? 0)} />
-        <StatCard label="Filed" value={String(data?.summary.takeCount ?? 0)} />
-        <StatCard label="Out of stock" value={String(data?.summary.outOfStock ?? 0)} />
+        <StatCard
+          label="Open counts"
+          value={String(data?.summary.draftCount ?? 0)}
+          onPress={() => navigation.navigate("Takes")}
+        />
+        <StatCard
+          label="Filed"
+          value={String(data?.summary.takeCount ?? 0)}
+          onPress={() => navigation.navigate("Takes")}
+        />
+        <StatCard
+          label="Out of stock"
+          value={String(data?.summary.outOfStock ?? 0)}
+          onPress={() => navigation.navigate("Inventory", { lowOnly: true })}
+        />
       </View>
 
       {data?.active.map((take) => (

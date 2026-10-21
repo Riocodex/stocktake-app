@@ -15,6 +15,8 @@ export type RootStackParamList = {
   NewDish: undefined;
   EditDish: { id: string };
   Delivery: undefined;
+  Ordering: undefined;
+  OrderApprovals: undefined;
   Wastage: undefined;
   RecordWastage: undefined;
   Transfers: undefined;
@@ -28,6 +30,6 @@ export type RootStackParamList = {
 export type MainTabParamList = {
   Home: undefined;
   Takes: undefined;
-  Inventory: undefined;
+  Inventory: { lowOnly?: boolean } | undefined;
   More: undefined;
 };

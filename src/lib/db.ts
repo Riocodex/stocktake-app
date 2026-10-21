@@ -9,9 +9,20 @@ function createClient() {
   });
 }
 
-// Bump this after schema fields are added so a hot-reloaded process does not
-// keep serving a PrismaClient that was built against the old shape.
-const CLIENT_GENERATION = "dish-wastage-v1";
+// Bump this after schema fields/models are added so a hot-reloaded process does
+// not keep serving a PrismaClient that was built against the old shape.
+const CLIENT_GENERATION = "purchasing-ordering-v2";
+
+function clientHasPurchasingModels(
+  client: ReturnType<typeof createClient> | undefined,
+): client is ReturnType<typeof createClient> {
+  // Webpack HMR can keep a PrismaClient whose generation string matches but
+  // whose delegates predate `prisma generate` (e.g. missing `supplier`).
+  const supplier = (
+    client as { supplier?: { findFirst?: unknown } } | undefined
+  )?.supplier;
+  return typeof supplier?.findFirst === "function";
+}
 
 // Next.js hot reloading would otherwise open a new connection on every edit.
 const globalForPrisma = globalThis as unknown as {
@@ -19,12 +30,16 @@ const globalForPrisma = globalThis as unknown as {
   prismaGeneration?: string;
 };
 
-if (globalForPrisma.prismaGeneration !== CLIENT_GENERATION) {
+if (
+  globalForPrisma.prismaGeneration !== CLIENT_GENERATION ||
+  !clientHasPurchasingModels(globalForPrisma.prisma)
+) {
   globalForPrisma.prisma = undefined;
   globalForPrisma.prismaGeneration = CLIENT_GENERATION;
 }
 
-export const prisma = globalForPrisma.prisma ?? createClient();
+export const prisma =
+  globalForPrisma.prisma ?? createClient();
 
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = prisma;

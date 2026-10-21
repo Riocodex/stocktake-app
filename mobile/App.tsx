@@ -10,6 +10,8 @@ import { AuthProvider, useAuth } from "./src/auth";
 import type { MainTabParamList, RootStackParamList } from "./src/navigation";
 import { ScopeProvider } from "./src/scope";
 import { DeliveryScreen } from "./src/screens/DeliveryScreen";
+import { OrderingScreen } from "./src/screens/OrderingScreen";
+import { OrderApprovalsScreen } from "./src/screens/OrderApprovalsScreen";
 import { HomeScreen } from "./src/screens/HomeScreen";
 import { InventoryScreen } from "./src/screens/InventoryScreen";
 import { LoginScreen } from "./src/screens/LoginScreen";
@@ -184,6 +186,16 @@ function Root() {
               name="Delivery"
               component={DeliveryScreen}
               options={{ title: "Delivery" }}
+            />
+            <Stack.Screen
+              name="Ordering"
+              component={OrderingScreen}
+              options={{ title: "Purchasing" }}
+            />
+            <Stack.Screen
+              name="OrderApprovals"
+              component={OrderApprovalsScreen}
+              options={{ title: "Approvals" }}
             />
             <Stack.Screen
               name="Wastage"

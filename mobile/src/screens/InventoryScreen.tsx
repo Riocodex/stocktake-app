@@ -9,14 +9,19 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import {
+  useFocusEffect,
+  useNavigation,
+  useRoute,
+  type RouteProp,
+} from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, money, qty, withQuery } from "../api";
 import { useAuth } from "../auth";
 import { formatDay } from "../format";
-import type { RootStackParamList } from "../navigation";
+import type { MainTabParamList, RootStackParamList } from "../navigation";
 import { useScope } from "../scope";
 import { colors } from "../theme";
 import { Badge, OutletPicker, ProductThumb, StatCard } from "../ui";
@@ -45,13 +50,20 @@ export function InventoryScreen() {
   const { outletId, setOutletId, outlets, isSuper } = useScope();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const route = useRoute<RouteProp<MainTabParamList, "Inventory">>();
   const [categories, setCategories] = useState<Category[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [stats, setStats] = useState({ value: 0, count: 0, lowCount: 0, outOfStock: 0 });
   const [categoryId, setCategoryId] = useState("");
   const [query, setQuery] = useState("");
-  const [lowOnly, setLowOnly] = useState(false);
+  const [lowOnly, setLowOnly] = useState(Boolean(route.params?.lowOnly));
   const [refreshing, setRefreshing] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (route.params?.lowOnly) setLowOnly(true);
+    }, [route.params?.lowOnly]),
+  );
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -112,9 +124,26 @@ export function InventoryScreen() {
       ) : null}
 
       <View style={styles.stats}>
-        <StatCard label="Value" value={money(stats.value)} />
-        <StatCard label="Products" value={String(stats.count)} />
-        <StatCard label="Low" value={String(stats.lowCount)} />
+        <StatCard
+          label="Value"
+          value={money(stats.value)}
+          onPress={() => setLowOnly(false)}
+        />
+        <StatCard
+          label="Products"
+          value={String(stats.count)}
+          onPress={() => setLowOnly(false)}
+        />
+        <StatCard
+          label="Low"
+          value={String(stats.lowCount)}
+          onPress={() => setLowOnly(true)}
+        />
+        <StatCard
+          label="Out"
+          value={String(stats.outOfStock)}
+          onPress={() => setLowOnly(true)}
+        />
       </View>
 
       <TextInput

@@ -34,6 +34,8 @@ model Outlet {
   transfersOut Transfer[] @relation("TransferFrom")
   transfersIn  Transfer[] @relation("TransferTo")
   stockMovements StockMovement[]
+  orderingCardOutlets OrderingCardOutlet[]
+  orderApprovals OrderApprovalRequest[]
 
   @@map("outlets")
 }
@@ -58,6 +60,8 @@ model User {
   transfersSent     Transfer[] @relation("TransferSentBy")
   transfersReceived Transfer[] @relation("TransferReceivedBy")
   stockMovements    StockMovement[]
+  orderApprovalsRequested OrderApprovalRequest[] @relation("OrderApprovalRequester")
+  orderApprovalsReviewed  OrderApprovalRequest[] @relation("OrderApprovalReviewer")
 
   @@index([outletId])
   @@map("users")
@@ -260,17 +264,23 @@ model PriceHistory {
 
 /// A supplier delivery: incoming stock recorded without a full count.
 model Delivery {
-  id        String   @id @default(cuid())
-  outletId  String
-  userId    String
-  note      String?
-  createdAt DateTime @default(now())
+  id         String   @id @default(cuid())
+  outletId   String
+  userId     String
+  /// Optional link to Purchasing supplier directory (does not affect costing).
+  supplierId String?
+  /// Optional delivery note / invoice reference from the supplier.
+  reference  String?
+  note       String?
+  createdAt  DateTime @default(now())
 
-  outlet Outlet         @relation(fields: [outletId], references: [id], onDelete: Cascade)
-  user   User           @relation(fields: [userId], references: [id])
-  lines  DeliveryLine[]
+  outlet   Outlet         @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  user     User           @relation(fields: [userId], references: [id])
+  supplier Supplier?      @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  lines    DeliveryLine[]
 
   @@index([outletId, createdAt])
+  @@index([supplierId])
   @@map("deliveries")
 }
 
@@ -483,4 +493,92 @@ model ActivityLog {
 
   @@index([createdAt])
   @@map("activity_log")
+}
+
+/// Vendor directory entry. One supplier can have several ordering cards.
+model Supplier {
+  id        String   @id @default(cuid())
+  name      String
+  notes     String?
+  isActive  Boolean  @default(true)
+  /// Demo / sample configuration — not a verified supplier relationship.
+  isSample  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cards      OrderingCard[]
+  deliveries Delivery[]
+
+  @@index([name])
+  @@index([isActive])
+  @@map("suppliers")
+}
+
+/// Large-card ordering option shown in Purchasing & Orders.
+model OrderingCard {
+  id                String   @id @default(cuid())
+  supplierId        String
+  /// Card headline, e.g. "Order Vegetables & Avocados".
+  title             String
+  category          String
+  /// WHATSAPP | WEBSITE | INTERNAL
+  method            String
+  externalUrl       String?
+  instructions      String?
+  requiresApproval  Boolean  @default(false)
+  isActive          Boolean  @default(true)
+  isSample          Boolean  @default(false)
+  sortOrder         Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  supplier  Supplier             @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  outlets   OrderingCardOutlet[]
+  approvals OrderApprovalRequest[]
+
+  @@index([supplierId, isActive])
+  @@index([method])
+  @@index([sortOrder])
+  @@map("ordering_cards")
+}
+
+/// Which outlets may see/use an ordering card. Empty = all active outlets.
+model OrderingCardOutlet {
+  id       String @id @default(cuid())
+  cardId   String
+  outletId String
+
+  card   OrderingCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  outlet Outlet       @relation(fields: [outletId], references: [id], onDelete: Cascade)
+
+  @@unique([cardId, outletId])
+  @@index([outletId])
+  @@map("ordering_card_outlets")
+}
+
+/// Lightweight office approval before opening an external ordering destination.
+model OrderApprovalRequest {
+  id              String    @id @default(cuid())
+  cardId          String
+  outletId        String
+  requestedById   String
+  /// PENDING | APPROVED | REJECTED
+  status          String    @default("PENDING")
+  note            String?
+  /// Optional free-text expected items / quantities for the office.
+  expectedItems   String?
+  reviewedById    String?
+  reviewedAt      DateTime?
+  decisionNote    String?
+  createdAt       DateTime  @default(now())
+
+  card        OrderingCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  outlet      Outlet       @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  requestedBy User         @relation("OrderApprovalRequester", fields: [requestedById], references: [id])
+  reviewedBy  User?        @relation("OrderApprovalReviewer", fields: [reviewedById], references: [id])
+
+  @@index([outletId, status, createdAt])
+  @@index([cardId, status])
+  @@index([requestedById])
+  @@map("order_approval_requests")
 }

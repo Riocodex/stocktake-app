@@ -45,13 +45,28 @@ export default async function OutletsPage() {
       </header>
 
       <section className="grid gap-4 sm:grid-cols-3">
-        <StatCard label="Group stock value" value={formatMoney(groupValue)} />
+        <StatCard
+          label="Group stock value"
+          value={formatMoney(groupValue)}
+          href="/app/inventory"
+        />
         <StatCard
           label="Items needing reorder"
           value={String(groupLow)}
           tone={groupLow > 0 ? "clay" : "sage"}
+          hint={
+            groupLow > 0
+              ? "By outlet"
+              : "Nothing below threshold"
+          }
+          href="/app/inventory/reorder"
         />
-        <StatCard label="Stock takes filed" value={String(groupTakes)} tone="ink" />
+        <StatCard
+          label="Stock takes filed"
+          value={String(groupTakes)}
+          tone="ink"
+          href="/app/stock-takes?status=submitted"
+        />
       </section>
 
       <div className="grid gap-5 md:grid-cols-2">
@@ -90,7 +105,12 @@ export default async function OutletsPage() {
                       Value
                     </dt>
                     <dd className="display-heading mt-1 text-lg text-ink">
-                      {formatMoney(summary.value)}
+                      <Link
+                        href={`/app/inventory?outlet=${outlet.id}`}
+                        className="transition hover:text-clay"
+                      >
+                        {formatMoney(summary.value)}
+                      </Link>
                     </dd>
                   </div>
                   <div>
@@ -98,7 +118,13 @@ export default async function OutletsPage() {
                       Low
                     </dt>
                     <dd className="display-heading mt-1 text-lg text-clay">
-                      {summary.lowCount}
+                      <Link
+                        href={`/app/inventory/reorder?outlet=${outlet.id}`}
+                        className="transition hover:opacity-80"
+                        title={`View items to reorder at ${outlet.name}`}
+                      >
+                        {summary.lowCount}
+                      </Link>
                     </dd>
                   </div>
                   <div>
@@ -106,7 +132,12 @@ export default async function OutletsPage() {
                       Counts
                     </dt>
                     <dd className="display-heading mt-1 text-lg text-sage-700">
-                      {summary.takeCount}
+                      <Link
+                        href={`/app/stock-takes?outlet=${outlet.id}&status=submitted`}
+                        className="transition hover:text-clay"
+                      >
+                        {summary.takeCount}
+                      </Link>
                     </dd>
                   </div>
                 </dl>

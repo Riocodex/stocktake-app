@@ -133,6 +133,9 @@ export async function recordDeliveryAction(
   const requestedOutlet = String(formData.get("outletId") ?? "").trim();
   const outletId = isSuperAdmin(user) ? requestedOutlet : user.outletId;
   const note = String(formData.get("note") ?? "").trim();
+  const reference = String(formData.get("reference") ?? "").trim();
+  const supplierIdRaw = String(formData.get("supplierId") ?? "").trim();
+  const supplierId = supplierIdRaw || null;
 
   if (!outletId) return { error: "Choose which outlet received this delivery." };
 
@@ -142,28 +145,50 @@ export async function recordDeliveryAction(
     return { error: "You do not have access to that outlet." };
   }
 
+  if (supplierId) {
+    const supplier = await prisma.supplier.findUnique({
+      where: { id: supplierId },
+      select: { id: true, isActive: true },
+    });
+    if (!supplier || !supplier.isActive) {
+      return { error: "That supplier is not available." };
+    }
+  }
+
   const rawItems = formData.getAll("itemId");
   const rawQty = formData.getAll("quantity");
   const rawExpiry = formData.getAll("expiryDate");
+  const rawUnitPrice = formData.getAll("unitPrice");
 
   const lines: {
     itemId: string;
     quantity: number;
     expiryDate: Date | null;
+    unitPrice: number | null;
   }[] = [];
 
   for (let index = 0; index < rawItems.length; index++) {
     const itemId = String(rawItems[index] ?? "").trim();
     const quantity = Number(rawQty[index] ?? 0);
     const expiryValue = String(rawExpiry[index] ?? "").trim();
+    const unitPriceRaw = String(rawUnitPrice[index] ?? "").trim();
     if (!itemId) continue;
     if (!Number.isFinite(quantity) || quantity <= 0) {
       return { error: "Each line needs a quantity greater than zero." };
+    }
+    let unitPrice: number | null = null;
+    if (unitPriceRaw) {
+      unitPrice = Number(unitPriceRaw);
+      if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+        return { error: "Purchase prices must be zero or more." };
+      }
+      unitPrice = Math.round(unitPrice * 100) / 100;
     }
     lines.push({
       itemId,
       quantity: Math.round(quantity * 100) / 100,
       expiryDate: expiryValue ? new Date(expiryValue) : null,
+      unitPrice,
     });
   }
 
@@ -176,11 +201,14 @@ export async function recordDeliveryAction(
       data: {
         outletId,
         userId: user.id,
+        supplierId,
+        reference: reference || null,
         note: note || null,
         lines: {
           create: lines.map((line) => ({
             itemId: line.itemId,
             quantity: line.quantity,
+            unitPrice: line.unitPrice,
             expiryDate: line.expiryDate,
           })),
         },
@@ -193,6 +221,9 @@ export async function recordDeliveryAction(
     });
 
     for (const line of created.lines) {
+      // OutletStock.unitPrice stays on group referencePrice for costing.
+      // DeliveryLine.unitPrice is purchase history only — never overwrites
+      // InventoryItem.referencePrice.
       await tx.outletStock.upsert({
         where: { outletId_itemId: { outletId, itemId: line.itemId } },
         create: {

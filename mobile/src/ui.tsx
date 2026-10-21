@@ -25,18 +25,30 @@ export function StatCard({
   label,
   value,
   hint,
+  onPress,
 }: {
   label: string;
   value: string;
   hint?: string;
+  onPress?: () => void;
 }) {
-  return (
-    <View style={styles.stat}>
+  const content = (
+    <>
       <Text style={styles.statLabel}>{label}</Text>
       <Text style={styles.statValue}>{value}</Text>
       {hint ? <Text style={styles.statHint}>{hint}</Text> : null}
-    </View>
+    </>
   );
+
+  if (onPress) {
+    return (
+      <Pressable style={styles.stat} onPress={onPress}>
+        {content}
+      </Pressable>
+    );
+  }
+
+  return <View style={styles.stat}>{content}</View>;
 }
 
 export function PrimaryButton({

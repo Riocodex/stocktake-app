@@ -37,6 +37,7 @@ export default async function InventoryPage({
   const search = (params.q ?? "").trim();
   const categoryFilter = params.category ?? "";
   const lowOnly = params.filter === "low";
+  const outOnly = params.filter === "out";
 
   const [outlets, categories, items] = await Promise.all([
     superAdmin ? getOutlets() : Promise.resolve([]),
@@ -143,7 +144,11 @@ export default async function InventoryPage({
     };
   });
 
-  const visible = lowOnly ? rows.filter((row) => row.isLow) : rows;
+  const visible = outOnly
+    ? rows.filter((row) => row.quantity === 0)
+    : lowOnly
+      ? rows.filter((row) => row.isLow)
+      : rows;
 
   const totals = {
     value: rows.reduce((sum, row) => sum + row.value, 0),
@@ -217,17 +222,37 @@ export default async function InventoryPage({
         <StatCard
           label={scope.outletId ? "Outlet stock value" : "Group stock value"}
           value={formatMoney(totals.value)}
+          href={
+            scope.outletId
+              ? `/app/inventory?outlet=${scope.outletId}`
+              : "/app/inventory"
+          }
         />
-        <StatCard label="Catalogue items" value={String(totals.items)} tone="ink" />
+        <StatCard
+          label="Catalogue items"
+          value={String(totals.items)}
+          tone="ink"
+          href="/app/products/items"
+        />
         <StatCard
           label={scope.outletId ? "Below threshold" : "Positions to reorder"}
           value={String(totals.low)}
           tone={totals.low > 0 ? "clay" : "sage"}
+          href={
+            scope.outletId
+              ? `/app/inventory/reorder?outlet=${scope.outletId}`
+              : "/app/inventory/reorder"
+          }
         />
         <StatCard
           label="Out of stock"
           value={String(totals.outOfStock)}
           tone={totals.outOfStock > 0 ? "clay" : "sage"}
+          href={
+            scope.outletId
+              ? `/app/inventory?filter=out&outlet=${scope.outletId}`
+              : "/app/inventory?filter=out"
+          }
         />
       </section>
 
@@ -251,6 +276,7 @@ export default async function InventoryPage({
           if (scope.outletId) query.set("outlet", scope.outletId);
           query.set("category", category.id);
           if (lowOnly) query.set("filter", "low");
+          if (outOnly) query.set("filter", "out");
           return (
             <Link
               key={category.id}
@@ -311,16 +337,24 @@ export default async function InventoryPage({
             </select>
           </div>
 
-          <label className="flex items-center gap-2 rounded-xl border border-ink/15 bg-white px-3 py-2 text-sm text-ink-soft">
-            <input
-              type="checkbox"
+          <div className="min-w-[10rem]">
+            <label
+              htmlFor="filter"
+              className="mb-1.5 block text-[11px] font-semibold text-ink-soft"
+            >
+              Stock filter
+            </label>
+            <select
+              id="filter"
               name="filter"
-              value="low"
-              defaultChecked={lowOnly}
-              className="h-4 w-4 accent-[#ba8976]"
-            />
-            Low stock only
-          </label>
+              defaultValue={outOnly ? "out" : lowOnly ? "low" : ""}
+              className="w-full rounded-xl border border-ink/15 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-clay"
+            >
+              <option value="">All stock</option>
+              <option value="low">Low stock only</option>
+              <option value="out">Out of stock only</option>
+            </select>
+          </div>
 
           <button
             type="submit"
@@ -329,7 +363,7 @@ export default async function InventoryPage({
             Apply
           </button>
 
-          {search || categoryFilter || lowOnly ? (
+          {search || categoryFilter || lowOnly || outOnly ? (
             <Link
               href={
                 scope.outletId
@@ -346,8 +380,18 @@ export default async function InventoryPage({
 
       {visible.length === 0 ? (
         <EmptyState
-          title="No products match"
-          description="Try a different search term or clear the filters."
+          title={
+            outOnly
+              ? "Nothing out of stock"
+              : lowOnly
+                ? "Nothing below threshold"
+                : "No products match"
+          }
+          description={
+            outOnly || lowOnly
+              ? "Clear the stock filter to see the full catalogue."
+              : "Try a different search term or clear the filters."
+          }
         />
       ) : (
         <TableShell

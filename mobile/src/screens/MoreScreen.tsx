@@ -54,6 +54,15 @@ export function MoreScreen() {
         <Text style={styles.rowTitle}>Movement history</Text>
         <Text style={styles.copy}>Audit trail of inventory changes</Text>
       </Pressable>
+      <Pressable
+        style={styles.row}
+        onPress={() => navigation.navigate("Ordering")}
+      >
+        <Text style={styles.rowTitle}>Purchasing & Orders</Text>
+        <Text style={styles.copy}>
+          Open WhatsApp / supplier websites, then receive goods
+        </Text>
+      </Pressable>
       <Pressable style={styles.row} onPress={() => navigation.navigate("Delivery")}>
         <Text style={styles.rowTitle}>Delivery</Text>
         <Text style={styles.copy}>Add supplier stock without a full count</Text>

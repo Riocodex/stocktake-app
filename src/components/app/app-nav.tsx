@@ -56,6 +56,11 @@ const NAV: NavItem[] = [
     icon: <Icon path="M3 7l9-4 9 4-9 4-9-4Zm0 5l9 4 9-4M3 17l9 4 9-4" />,
   },
   {
+    href: "/app/purchasing",
+    label: "Purchasing",
+    icon: <Icon path="M6 6h15l-1.5 9h-12zM6 6l-2-3H2M9 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm8 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" />,
+  },
+  {
     href: "/app/inventory/wastage",
     label: "Wastage",
     icon: <Icon path="M12 9v4M12 17h.01M10.3 3.3l-8 14A2 2 0 0 0 4 20h16a2 2 0 0 0 1.7-2.7l-8-14a2 2 0 0 0-3.4 0Z" />,

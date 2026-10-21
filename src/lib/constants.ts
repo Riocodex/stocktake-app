@@ -257,3 +257,44 @@ export const AVAILABILITY_STATUS_LABELS: Record<AvailabilityStatus, string> = {
   UNAVAILABLE: "Unavailable",
   UNRESOLVED: "Unresolved",
 };
+
+/** How staff place an order from a Purchasing card. */
+export const ORDERING_METHOD = {
+  WHATSAPP: "WHATSAPP",
+  WEBSITE: "WEBSITE",
+  INTERNAL: "INTERNAL",
+} as const;
+
+export type OrderingMethod =
+  (typeof ORDERING_METHOD)[keyof typeof ORDERING_METHOD];
+
+export const ORDERING_METHOD_LABELS: Record<OrderingMethod, string> = {
+  WHATSAPP: "WhatsApp",
+  WEBSITE: "Website",
+  INTERNAL: "Internal",
+};
+
+export function isOrderingMethod(value: string): value is OrderingMethod {
+  return Object.values(ORDERING_METHOD).includes(value as OrderingMethod);
+}
+
+export const ORDER_APPROVAL_STATUS = {
+  PENDING: "PENDING",
+  APPROVED: "APPROVED",
+  REJECTED: "REJECTED",
+} as const;
+
+export type OrderApprovalStatus =
+  (typeof ORDER_APPROVAL_STATUS)[keyof typeof ORDER_APPROVAL_STATUS];
+
+export const ORDER_APPROVAL_STATUS_LABELS: Record<OrderApprovalStatus, string> =
+  {
+    PENDING: "Pending",
+    APPROVED: "Approved",
+    REJECTED: "Rejected",
+  };
+
+/** Demo destinations for sample ordering cards (not verified suppliers). */
+export const DEMO_ORDERING_WHATSAPP_URL =
+  "https://chat.whatsapp.com/F2YOng3M5M54afoHLR3Hyh";
+export const DEMO_ORDERING_WEBSITE_URL = "https://tribemalta.com/mt/shop";

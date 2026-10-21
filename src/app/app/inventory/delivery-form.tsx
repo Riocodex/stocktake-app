@@ -10,15 +10,23 @@ import { Button } from "@/components/ui";
 
 const INITIAL: InventoryActionResult = { error: null };
 
-type Line = { key: string; itemId: string; quantity: string; expiryDate: string };
+type Line = {
+  key: string;
+  itemId: string;
+  quantity: string;
+  unitPrice: string;
+  expiryDate: string;
+};
 
 export function DeliveryForm({
   outlets,
+  suppliers,
   items,
   fixedOutletId,
   fixedOutletName,
 }: {
   outlets: { id: string; name: string }[];
+  suppliers: { id: string; name: string; isSample: boolean }[];
   items: { id: string; name: string; unit: string; category: string }[];
   fixedOutletId: string | null;
   fixedOutletName: string | null;
@@ -28,7 +36,7 @@ export function DeliveryForm({
     INITIAL,
   );
   const [lines, setLines] = useState<Line[]>([
-    { key: "1", itemId: "", quantity: "", expiryDate: "" },
+    { key: "1", itemId: "", quantity: "", unitPrice: "", expiryDate: "" },
   ]);
 
   const grouped = items.reduce<Record<string, typeof items>>(
@@ -75,11 +83,57 @@ export function DeliveryForm({
         </div>
       )}
 
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label htmlFor="supplierId" className="eyebrow mb-2 block text-ink-muted">
+            Supplier (optional)
+          </label>
+          <select
+            id="supplierId"
+            name="supplierId"
+            defaultValue=""
+            className="w-full rounded-2xl border border-ink/15 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-clay"
+          >
+            <option value="">Unknown / not listed</option>
+            {suppliers.map((supplier) => (
+              <option key={supplier.id} value={supplier.id}>
+                {supplier.name}
+                {supplier.isSample ? " (sample)" : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="reference" className="eyebrow mb-2 block text-ink-muted">
+            Delivery note / reference
+          </label>
+          <input
+            id="reference"
+            name="reference"
+            type="text"
+            placeholder="Invoice or DN number"
+            className="w-full rounded-2xl border border-ink/15 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-clay"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label htmlFor="note" className="eyebrow mb-2 block text-ink-muted">
+          Notes
+        </label>
+        <input
+          id="note"
+          name="note"
+          type="text"
+          className="w-full rounded-2xl border border-ink/15 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-clay"
+        />
+      </div>
+
       <div className="space-y-3">
         {lines.map((line, index) => (
           <div
             key={line.key}
-            className="grid gap-3 rounded-2xl border border-ink/8 bg-cream/40 p-4 sm:grid-cols-[1fr_7rem_9rem_auto]"
+            className="grid gap-3 rounded-2xl border border-ink/8 bg-cream/40 p-4 sm:grid-cols-[1fr_6rem_6rem_8rem_auto]"
           >
             <div>
               {index === 0 ? (
@@ -117,7 +171,7 @@ export function DeliveryForm({
             <div>
               {index === 0 ? (
                 <label className="mb-1.5 block text-[11px] font-semibold text-ink-soft">
-                  Qty in
+                  Qty
                 </label>
               ) : null}
               <input
@@ -136,6 +190,31 @@ export function DeliveryForm({
                     ),
                   )
                 }
+                className="w-full rounded-xl border border-ink/15 bg-white px-3 py-2 text-sm text-ink outline-none focus:border-clay"
+              />
+            </div>
+            <div>
+              {index === 0 ? (
+                <label className="mb-1.5 block text-[11px] font-semibold text-ink-soft">
+                  € / unit
+                </label>
+              ) : null}
+              <input
+                name="unitPrice"
+                type="number"
+                min="0"
+                step="0.01"
+                value={line.unitPrice}
+                onChange={(event) =>
+                  setLines((current) =>
+                    current.map((entry) =>
+                      entry.key === line.key
+                        ? { ...entry, unitPrice: event.target.value }
+                        : entry,
+                    ),
+                  )
+                }
+                placeholder="opt."
                 className="w-full rounded-xl border border-ink/15 bg-white px-3 py-2 text-sm text-ink outline-none focus:border-clay"
               />
             </div>
@@ -189,6 +268,7 @@ export function DeliveryForm({
               key: String(Date.now()),
               itemId: "",
               quantity: "",
+              unitPrice: "",
               expiryDate: "",
             },
           ])
@@ -197,6 +277,11 @@ export function DeliveryForm({
       >
         + Add another product
       </button>
+
+      <p className="text-xs text-ink-muted">
+        Optional purchase prices are stored on this delivery only. They do not
+        overwrite group-wide reference prices used for dish costing.
+      </p>
 
       {state.error ? (
         <p

@@ -142,12 +142,26 @@ export default async function DashboardPage({
           label="Stock on hand"
           value={formatMoney(summary.value)}
           hint={`${summary.trackedItems} tracked positions`}
+          href={
+            scope.outletId
+              ? `/app/inventory?outlet=${scope.outletId}`
+              : "/app/inventory"
+          }
         />
         <StatCard
           label="Needs reordering"
           value={String(summary.lowCount)}
-          hint={`${summary.outOfStock} completely out of stock`}
+          hint={
+            summary.lowCount > 0
+              ? `${summary.outOfStock} completely out of stock`
+              : "Nothing below threshold"
+          }
           tone={summary.lowCount > 0 ? "clay" : "sage"}
+          href={
+            scope.outletId
+              ? `/app/inventory/reorder?outlet=${scope.outletId}`
+              : "/app/inventory/reorder"
+          }
         />
         <StatCard
           label="Open counts"
@@ -158,6 +172,11 @@ export default async function DashboardPage({
               : "No drafts in progress"
           }
           tone="sage"
+          href={
+            scope.outletId
+              ? `/app/stock-takes?status=draft&outlet=${scope.outletId}`
+              : "/app/stock-takes?status=draft"
+          }
         />
         <StatCard
           label="Stock takes filed"
@@ -168,6 +187,11 @@ export default async function DashboardPage({
               : "No submitted counts yet"
           }
           tone="ink"
+          href={
+            scope.outletId
+              ? `/app/stock-takes?status=submitted&outlet=${scope.outletId}`
+              : "/app/stock-takes?status=submitted"
+          }
         />
       </section>
 
@@ -198,17 +222,35 @@ export default async function DashboardPage({
                   </span>
                 </Td>
                 <Td className="text-right font-semibold text-ink">
-                  {formatMoney(row.value)}
+                  <Link
+                    href={`/app/inventory?outlet=${outlet.id}`}
+                    className="transition hover:text-clay"
+                  >
+                    {formatMoney(row.value)}
+                  </Link>
                 </Td>
-                <Td className="text-right">{row.trackedItems}</Td>
                 <Td className="text-right">
-                  {row.lowCount > 0 ? (
-                    <Badge tone={row.lowCount > 12 ? "danger" : "warn"}>
-                      {row.lowCount}
-                    </Badge>
-                  ) : (
-                    <Badge tone="ok">0</Badge>
-                  )}
+                  <Link
+                    href={`/app/inventory?outlet=${outlet.id}`}
+                    className="transition hover:text-clay"
+                  >
+                    {row.trackedItems}
+                  </Link>
+                </Td>
+                <Td className="text-right">
+                  <Link
+                    href={`/app/inventory/reorder?outlet=${outlet.id}`}
+                    className="inline-flex"
+                    title={`View items to reorder at ${outlet.name}`}
+                  >
+                    {row.lowCount > 0 ? (
+                      <Badge tone={row.lowCount > 12 ? "danger" : "warn"}>
+                        {row.lowCount}
+                      </Badge>
+                    ) : (
+                      <Badge tone="ok">0</Badge>
+                    )}
+                  </Link>
                 </Td>
                 <Td className="text-xs">
                   {row.lastTake
@@ -240,7 +282,11 @@ export default async function DashboardPage({
             }
             action={
               <Link
-                href="/app/inventory?filter=low"
+                href={
+                  scope.outletId
+                    ? `/app/inventory/reorder?outlet=${scope.outletId}`
+                    : "/app/inventory/reorder"
+                }
                 className="text-xs font-semibold text-clay hover:underline"
               >
                 See all

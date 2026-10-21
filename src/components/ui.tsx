@@ -162,12 +162,15 @@ export function StatCard({
   hint,
   tone = "clay",
   icon,
+  href,
 }: {
   label: string;
   value: string;
   hint?: string;
   tone?: "clay" | "sage" | "ink";
   icon?: ReactNode;
+  /** When set, the whole card is a link (e.g. drill into a detail list). */
+  href?: string;
 }) {
   const accents = {
     clay: "text-clay",
@@ -175,14 +178,15 @@ export function StatCard({
     ink: "text-ink",
   } as const;
 
-  return (
-    <Card className="flex items-start justify-between gap-4 p-5">
-      <div className="min-w-0">
+  const body = (
+    <>
+      <div className="min-w-0 flex-1">
         <p className="eyebrow text-ink-muted">{label}</p>
         <p
           className={cn(
-            "display-heading mt-2 truncate text-3xl",
+            "display-heading mt-2 truncate text-3xl transition-colors",
             accents[tone],
+            href ? "group-hover:text-clay" : null,
           )}
         >
           {value}
@@ -190,9 +194,37 @@ export function StatCard({
         {hint ? (
           <p className="mt-1 truncate text-xs text-ink-muted">{hint}</p>
         ) : null}
+        {href ? (
+          <p className="mt-2 text-[11px] font-semibold tracking-wide text-clay/0 transition group-hover:text-clay">
+            Explore →
+          </p>
+        ) : null}
       </div>
       {icon ? <div className="shrink-0 text-sage">{icon}</div> : null}
-    </Card>
+    </>
+  );
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className="group block rounded-3xl outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-clay"
+      >
+        <Card
+          className={cn(
+            "flex items-start justify-between gap-4 border-transparent p-5 shadow-none",
+            "bg-white/90 transition duration-200",
+            "group-hover:-translate-y-0.5 group-hover:bg-cream group-hover:shadow-[0_12px_28px_rgb(43_38_34/0.08)]",
+          )}
+        >
+          {body}
+        </Card>
+      </Link>
+    );
+  }
+
+  return (
+    <Card className="flex items-start justify-between gap-4 p-5">{body}</Card>
   );
 }
 
